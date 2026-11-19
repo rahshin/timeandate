@@ -9,7 +9,7 @@ on:
         options: [candidate, promote, rollback]
         required: true
       tag:
-        description: Candidate tag for candidate and promote, stable tag for rollback
+        description: Use v0.1.0-rc.1 for candidate or promote, or v0.1.0 for rollback
         type: string
         required: true
       source_sha:
@@ -51,28 +51,43 @@ jobs:
           node scripts/release.mjs validate "$OPERATION" "$TAG" "$SOURCE"
           if [ "$OPERATION" = candidate ]; then
             if ! git branch -r --contains "$SOURCE" | grep -Eq '^ +origin/(main|release/[0-9]+\.[0-9]+)$'; then
-              echo 'Choose a commit on main or a maintained release branch.' >&2
+              echo "Commit $SOURCE was not found on main or a release/<major>.<minor> branch. Check the SHA and push or merge that commit before retrying." >&2
               exit 1
             fi
-            gh run list --workflow ci.yml --event push --commit "$SOURCE" --status success --json headSha \
-              --jq '.[].headSha' | grep -Fx "$SOURCE" >/dev/null
+            if ! gh run list --workflow ci.yml --event push --commit "$SOURCE" --status success --json headSha \
+              --jq '.[].headSha' | grep -Fx "$SOURCE" >/dev/null; then
+              echo "Could not confirm a successful CI push run for $SOURCE. Check Actions → CI and retry after that commit passes." >&2
+              exit 1
+            fi
             if git show-ref --verify --quiet "refs/tags/$TAG"; then
-              echo 'Candidate tag already exists.' >&2
+              echo "Candidate tag $TAG already exists. To build a new candidate, use the next unused RC number." >&2
               exit 1
             fi
           else
-            KIND=$(gh release view "$TAG" --json isDraft,isPrerelease --jq '[.isDraft,.isPrerelease] | join(" ")')
+            if ! KIND=$(gh release view "$TAG" --json isDraft,isPrerelease --jq '[.isDraft,.isPrerelease] | join(" ")'); then
+              echo "Could not load the release for $TAG. Check that it exists under Releases and is accessible, then retry." >&2
+              exit 1
+            fi
             if [ "$OPERATION" = promote ]; then
-              test "$KIND" = 'false true'
+              if [ "$KIND" != 'false true' ]; then
+                echo "Release $TAG cannot be promoted. Select a published QA prerelease." >&2
+                exit 1
+              fi
               STABLE=${TAG%-rc.*}
               if git show-ref --verify --quiet "refs/tags/$STABLE"; then
-                echo 'Stable tag already exists.' >&2
+                echo "Stable tag $STABLE already exists. Choose a candidate for a new stable version, or use rollback to restore a published stable release." >&2
                 exit 1
               fi
             else
-              test "$KIND" = 'false false'
+              if [ "$KIND" != 'false false' ]; then
+                echo "Release $TAG cannot be rolled back to. Select a published stable release." >&2
+                exit 1
+              fi
             fi
-            SOURCE=$(git rev-parse "refs/tags/$TAG^{commit}")
+            if ! SOURCE=$(git rev-parse --verify "refs/tags/$TAG^{commit}"); then
+              echo "Release $TAG has no matching Git tag in this checkout. Check the tag in GitHub before retrying." >&2
+              exit 1
+            fi
           fi
           printf 'source=%s\n' "$SOURCE" >> "$GITHUB_OUTPUT"
           printf '### Release plan\n\nOperation: %s\n\nTag: %s\n\nSource: %s\n' "$OPERATION" "$TAG" "$SOURCE" >> "$GITHUB_STEP_SUMMARY"
@@ -83,8 +98,14 @@ jobs:
           TAG: ${{ inputs.tag }}
           QA_URL: ${{ vars.QA_URL }}
         run: |
-          gh release download "$TAG" -D artifacts -p bundle.tar.gz -p SHA256SUMS
-          (cd artifacts && sha256sum --check SHA256SUMS)
+          if ! gh release download "$TAG" -D artifacts -p bundle.tar.gz -p SHA256SUMS; then
+            echo "Could not download the bundle for $TAG. Open the GitHub release and check that bundle.tar.gz and SHA256SUMS are attached." >&2
+            exit 1
+          fi
+          if ! (cd artifacts && sha256sum --check SHA256SUMS); then
+            echo 'Could not verify the release bundle. Check the checksum output above and use the original bundle.tar.gz and its matching SHA256SUMS.' >&2
+            exit 1
+          fi
           {
             printf '\nBundle digest\n\n```text\n'
             cat artifacts/SHA256SUMS
@@ -154,10 +175,20 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           DEPLOY_URL: ${{ vars.DEPLOY_URL }}
         run: |
-          (cd artifacts && sha256sum --check SHA256SUMS)
+          node scripts/release.mjs check-deploy
+          if ! (cd artifacts && sha256sum --check SHA256SUMS); then
+            echo 'Could not verify the release bundle. Check the checksum output above and use the original bundle.tar.gz and its matching SHA256SUMS.' >&2
+            exit 1
+          fi
           mkdir dist
-          tar -xzf artifacts/bundle.tar.gz -C dist
-          npx --no-install wrangler deploy --env qa
+          if ! tar -xzf artifacts/bundle.tar.gz -C dist; then
+            echo 'Could not unpack bundle.tar.gz. Check the selected release artifact before retrying.' >&2
+            exit 1
+          fi
+          if ! npx --no-install wrangler deploy --env qa; then
+            echo 'Could not deploy to qa on Cloudflare. See the Wrangler output above and check the target account, token permissions, and Worker settings before retrying.' >&2
+            exit 1
+          fi
           node scripts/release.mjs smoke "$DEPLOY_URL"
 
   publish-candidate:
@@ -178,9 +209,15 @@ jobs:
           TAG: ${{ inputs.tag }}
           SOURCE: ${{ needs.plan.outputs.source }}
         run: |
-          (cd artifacts && sha256sum --check SHA256SUMS)
-          gh release create "$TAG" artifacts/* --repo "$REPO" --target "$SOURCE" --prerelease \
-            --title "$TAG" --notes "QA smoke tests passed for commit $SOURCE."
+          if ! (cd artifacts && sha256sum --check SHA256SUMS); then
+            echo 'Could not verify the release bundle. Check the checksum output above and use the original bundle.tar.gz and its matching SHA256SUMS.' >&2
+            exit 1
+          fi
+          if ! gh release create "$TAG" artifacts/* --repo "$REPO" --target "$SOURCE" --prerelease \
+            --title "$TAG" --notes "QA smoke tests passed for commit $SOURCE."; then
+            echo "QA passed, but GitHub could not publish $TAG. Check the output above, tag rules, and whether the release or its assets already exist before retrying." >&2
+            exit 1
+          fi
 
   production:
     if: inputs.operation != 'candidate'
@@ -208,10 +245,20 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           DEPLOY_URL: ${{ vars.DEPLOY_URL }}
         run: |
-          (cd artifacts && sha256sum --check SHA256SUMS)
+          node scripts/release.mjs check-deploy
+          if ! (cd artifacts && sha256sum --check SHA256SUMS); then
+            echo 'Could not verify the release bundle. Check the checksum output above and use the original bundle.tar.gz and its matching SHA256SUMS.' >&2
+            exit 1
+          fi
           mkdir dist
-          tar -xzf artifacts/bundle.tar.gz -C dist
-          npx --no-install wrangler deploy --env=""
+          if ! tar -xzf artifacts/bundle.tar.gz -C dist; then
+            echo 'Could not unpack bundle.tar.gz. Check the selected release artifact before retrying.' >&2
+            exit 1
+          fi
+          if ! npx --no-install wrangler deploy --env=""; then
+            echo 'Could not deploy to production on Cloudflare. See the Wrangler output above and check the target account, token permissions, and Worker settings before retrying.' >&2
+            exit 1
+          fi
           node scripts/release.mjs smoke "$DEPLOY_URL"
 
   publish-stable:
@@ -232,7 +279,13 @@ jobs:
           TAG: ${{ inputs.tag }}
           SOURCE: ${{ needs.plan.outputs.source }}
         run: |
-          (cd artifacts && sha256sum --check SHA256SUMS)
+          if ! (cd artifacts && sha256sum --check SHA256SUMS); then
+            echo 'Could not verify the release bundle. Check the checksum output above and use the original bundle.tar.gz and its matching SHA256SUMS.' >&2
+            exit 1
+          fi
           STABLE=${TAG%-rc.*}
-          gh release create "$STABLE" artifacts/* --repo "$REPO" --target "$SOURCE" \
-            --title "$STABLE" --notes "Promoted $TAG after production smoke tests. Source: $SOURCE."
+          if ! gh release create "$STABLE" artifacts/* --repo "$REPO" --target "$SOURCE" \
+            --title "$STABLE" --notes "Promoted $TAG after production smoke tests. Source: $SOURCE."; then
+            echo "Production was deployed and verified, but GitHub could not finish publishing $STABLE. Check the release, its assets, and tag rules before retrying publication." >&2
+            exit 1
+          fi
