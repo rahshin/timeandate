@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -58,4 +61,26 @@ test('smoke checks explain what the deployed Worker returned', async () => {
   await assert.rejects(verifyDeployment(origin, expected, serve('<main>Other app</main>')),
     /clocks\?cities=london,tokyo.*did not serve Time And Date/);
   await verifyDeployment(origin, expected, serve('<main id="app"></main>'));
+});
+
+
+test('automatic candidates use the pinned commit version and increment existing RC tags', t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'timeandate-release-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  git('init', '--quiet');
+  writeFileSync(join(cwd, 'package.json'), '{"version":"0.1.0"}');
+  git('add', 'package.json');
+  git('-c', 'user.name=Release Test', '-c', 'user.email=release@example.test', 'commit', '--quiet', '-m', 'Initial version');
+  const source = git('rev-parse', 'HEAD');
+  writeFileSync(join(cwd, 'package.json'), '{"version":"9.0.0"}');
+  const resolveTag = (tag = '') => spawnSync(process.execPath, [script, 'resolve-candidate', 'candidate', tag, source], { cwd, encoding: 'utf8' });
+  assert.equal(resolveTag().stdout.trim(), 'v0.1.0-rc.1');
+  for (const tag of ['v0.1.0-rc.2', 'v0.1.0-rc.10', 'v0.1.0-rc.99-extra', 'v9.0.0-rc.50']) git('tag', tag);
+  assert.equal(resolveTag().stdout.trim(), 'v0.1.0-rc.11');
+  assert.equal(resolveTag('v1.0.0-rc.1').stdout.trim(), 'v1.0.0-rc.1');
+  git('tag', 'v0.1.0');
+  const published = resolveTag();
+  assert.equal(published.status, 1);
+  assert.match(published.stderr, /Stable tag v0\.1\.0 already exists.*Bump package\.json/);
 });

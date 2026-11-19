@@ -9,11 +9,10 @@ on:
         options: [candidate, promote, rollback]
         required: true
       tag:
-        description: Use v0.1.0-rc.1 for candidate or promote, or v0.1.0 for rollback
+        description: Optional for candidate. Use an existing RC tag for promote or a stable tag for rollback.
         type: string
-        required: true
       source_sha:
-        description: Full source commit SHA, required for candidate
+        description: Optional full source SHA for candidate. Blank uses main at dispatch.
         type: string
 
 permissions:
@@ -32,6 +31,7 @@ jobs:
       actions: read
     outputs:
       source: ${{ steps.plan.outputs.source }}
+      tag: ${{ steps.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -47,9 +47,11 @@ jobs:
           OPERATION: ${{ inputs.operation }}
           TAG: ${{ inputs.tag }}
           SOURCE: ${{ inputs.source_sha }}
+          DISPATCH_SHA: ${{ github.sha }}
         run: |
-          node scripts/release.mjs validate "$OPERATION" "$TAG" "$SOURCE"
           if [ "$OPERATION" = candidate ]; then
+            SOURCE=${SOURCE:-$DISPATCH_SHA}
+            TAG=$(node scripts/release.mjs resolve-candidate "$OPERATION" "$TAG" "$SOURCE")
             if ! git branch -r --contains "$SOURCE" | grep -Eq '^ +origin/(main|release/[0-9]+\.[0-9]+)$'; then
               echo "Commit $SOURCE was not found on main or a release/<major>.<minor> branch. Check the SHA and push or merge that commit before retrying." >&2
               exit 1
@@ -64,6 +66,7 @@ jobs:
               exit 1
             fi
           else
+            node scripts/release.mjs validate "$OPERATION" "$TAG" "$SOURCE"
             if ! KIND=$(gh release view "$TAG" --json isDraft,isPrerelease --jq '[.isDraft,.isPrerelease] | join(" ")'); then
               echo "Could not load the release for $TAG. Check that it exists under Releases and is accessible, then retry." >&2
               exit 1
@@ -89,13 +92,13 @@ jobs:
               exit 1
             fi
           fi
-          printf 'source=%s\n' "$SOURCE" >> "$GITHUB_OUTPUT"
+          printf 'source=%s\ntag=%s\n' "$SOURCE" "$TAG" >> "$GITHUB_OUTPUT"
           printf '### Release plan\n\nOperation: %s\n\nTag: %s\n\nSource: %s\n' "$OPERATION" "$TAG" "$SOURCE" >> "$GITHUB_STEP_SUMMARY"
       - name: Verify published bundle and show digest for approval
         if: inputs.operation != 'candidate'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ steps.plan.outputs.tag }}
           QA_URL: ${{ vars.QA_URL }}
         run: |
           if ! gh release download "$TAG" -D artifacts -p bundle.tar.gz -p SHA256SUMS; then
@@ -136,7 +139,7 @@ jobs:
       - run: npm run build
       - name: Stamp and package the web output
         env:
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ needs.plan.outputs.tag }}
           SOURCE: ${{ needs.plan.outputs.source }}
         run: |
           node scripts/release.mjs stamp candidate "$TAG" "$SOURCE"
@@ -206,7 +209,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ needs.plan.outputs.tag }}
           SOURCE: ${{ needs.plan.outputs.source }}
         run: |
           if ! (cd artifacts && sha256sum --check SHA256SUMS); then
@@ -276,7 +279,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ needs.plan.outputs.tag }}
           SOURCE: ${{ needs.plan.outputs.source }}
         run: |
           if ! (cd artifacts && sha256sum --check SHA256SUMS); then
