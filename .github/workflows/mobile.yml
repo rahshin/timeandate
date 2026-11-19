@@ -1,0 +1,60 @@
+name: Build mobile apps
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-36'
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx --no-install cap sync android
+      - run: ./gradlew assembleDebug
+        working-directory: android
+      - uses: actions/upload-artifact@v7
+        with:
+          name: timeandate-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+  ios:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx --no-install cap sync ios
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -sdk iphonesimulator \
+            -configuration Debug -derivedDataPath ios-build CODE_SIGNING_ALLOWED=NO build
+          ditto -c -k --keepParent ios-build/Build/Products/Debug-iphonesimulator/App.app timeandate-ios-simulator.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: timeandate-ios-simulator
+          path: timeandate-ios-simulator.zip
+          if-no-files-found: error

@@ -1,0 +1,238 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Build a candidate, promote a QA candidate, or restore a stable release
+        type: choice
+        options: [candidate, promote, rollback]
+        required: true
+      tag:
+        description: Candidate tag for candidate and promote, stable tag for rollback
+        type: string
+        required: true
+      source_sha:
+        description: Full source commit SHA, required for candidate
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: timeandate-release
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      source: ${{ steps.plan.outputs.source }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Verify release selection
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPERATION: ${{ inputs.operation }}
+          TAG: ${{ inputs.tag }}
+          SOURCE: ${{ inputs.source_sha }}
+        run: |
+          node scripts/release.mjs validate "$OPERATION" "$TAG" "$SOURCE"
+          if [ "$OPERATION" = candidate ]; then
+            if ! git branch -r --contains "$SOURCE" | grep -Eq '^ +origin/(main|release/[0-9]+\.[0-9]+)$'; then
+              echo 'Choose a commit on main or a maintained release branch.' >&2
+              exit 1
+            fi
+            gh run list --workflow ci.yml --event push --commit "$SOURCE" --status success --json headSha \
+              --jq '.[].headSha' | grep -Fx "$SOURCE" >/dev/null
+            if git show-ref --verify --quiet "refs/tags/$TAG"; then
+              echo 'Candidate tag already exists.' >&2
+              exit 1
+            fi
+          else
+            KIND=$(gh release view "$TAG" --json isDraft,isPrerelease --jq '[.isDraft,.isPrerelease] | join(" ")')
+            if [ "$OPERATION" = promote ]; then
+              test "$KIND" = 'false true'
+              STABLE=${TAG%-rc.*}
+              if git show-ref --verify --quiet "refs/tags/$STABLE"; then
+                echo 'Stable tag already exists.' >&2
+                exit 1
+              fi
+            else
+              test "$KIND" = 'false false'
+            fi
+            SOURCE=$(git rev-parse "refs/tags/$TAG^{commit}")
+          fi
+          printf 'source=%s\n' "$SOURCE" >> "$GITHUB_OUTPUT"
+          printf '### Release plan\n\nOperation: %s\n\nTag: %s\n\nSource: %s\n' "$OPERATION" "$TAG" "$SOURCE" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify published bundle and show digest for approval
+        if: inputs.operation != 'candidate'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          QA_URL: ${{ vars.QA_URL }}
+        run: |
+          gh release download "$TAG" -D artifacts -p bundle.tar.gz -p SHA256SUMS
+          (cd artifacts && sha256sum --check SHA256SUMS)
+          {
+            printf '\nBundle digest\n\n```text\n'
+            cat artifacts/SHA256SUMS
+            printf '```\n\nQA: %s\n' "$QA_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: inputs.operation != 'candidate'
+        with:
+          name: verified-bundle
+          path: artifacts/
+          if-no-files-found: error
+
+  build:
+    if: inputs.operation == 'candidate'
+    needs: plan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.source }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Stamp and package the web output
+        env:
+          TAG: ${{ inputs.tag }}
+          SOURCE: ${{ needs.plan.outputs.source }}
+        run: |
+          node scripts/release.mjs stamp candidate "$TAG" "$SOURCE"
+          mkdir artifacts
+          tar -czf artifacts/bundle.tar.gz -C dist .
+          (cd artifacts && sha256sum bundle.tar.gz > SHA256SUMS)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: verified-bundle
+          path: artifacts/
+          if-no-files-found: error
+
+  qa:
+    if: inputs.operation == 'candidate'
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    environment:
+      name: qa
+      url: ${{ vars.DEPLOY_URL }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: verified-bundle
+          path: artifacts
+      - name: Deploy and verify QA
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          DEPLOY_URL: ${{ vars.DEPLOY_URL }}
+        run: |
+          (cd artifacts && sha256sum --check SHA256SUMS)
+          mkdir dist
+          tar -xzf artifacts/bundle.tar.gz -C dist
+          npx --no-install wrangler deploy --env qa
+          node scripts/release.mjs smoke "$DEPLOY_URL"
+
+  publish-candidate:
+    if: inputs.operation == 'candidate'
+    needs: [plan, qa]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: verified-bundle
+          path: artifacts
+      - name: Publish QA-verified candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          SOURCE: ${{ needs.plan.outputs.source }}
+        run: |
+          (cd artifacts && sha256sum --check SHA256SUMS)
+          gh release create "$TAG" artifacts/* --repo "$REPO" --target "$SOURCE" --prerelease \
+            --title "$TAG" --notes "QA smoke tests passed for commit $SOURCE."
+
+  production:
+    if: inputs.operation != 'candidate'
+    needs: plan
+    runs-on: ubuntu-24.04
+    environment:
+      name: production
+      url: ${{ vars.DEPLOY_URL }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: verified-bundle
+          path: artifacts
+      - name: Deploy approved bundle and verify production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          DEPLOY_URL: ${{ vars.DEPLOY_URL }}
+        run: |
+          (cd artifacts && sha256sum --check SHA256SUMS)
+          mkdir dist
+          tar -xzf artifacts/bundle.tar.gz -C dist
+          npx --no-install wrangler deploy --env=""
+          node scripts/release.mjs smoke "$DEPLOY_URL"
+
+  publish-stable:
+    if: inputs.operation == 'promote'
+    needs: [plan, production]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: verified-bundle
+          path: artifacts
+      - name: Publish the deployed bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          SOURCE: ${{ needs.plan.outputs.source }}
+        run: |
+          (cd artifacts && sha256sum --check SHA256SUMS)
+          STABLE=${TAG%-rc.*}
+          gh release create "$STABLE" artifacts/* --repo "$REPO" --target "$SOURCE" \
+            --title "$STABLE" --notes "Promoted $TAG after production smoke tests. Source: $SOURCE."

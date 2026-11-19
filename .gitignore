@@ -1,0 +1,13 @@
+node_modules/
+dist/
+artifacts/
+.wrangler/
+.env*
+.dev.vars*
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+.DS_Store
+ios-build/
+timeandate-ios-simulator.zip
