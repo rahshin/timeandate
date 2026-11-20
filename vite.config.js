@@ -2,12 +2,13 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
 export default defineConfig(({ mode }) => {
-  const native = mode === "native";
+  const timerDev = mode === "timer-dev";
+  const native = mode === "native" || timerDev;
   return {
     define: { __NATIVE_BUILD__: JSON.stringify(native) },
     publicDir: native ? false : "public",
     build: {
-      outDir: native ? "dist-native" : "dist",
+      outDir: timerDev ? "artifacts/timer-dev/web" : native ? "dist-native" : "dist",
       manifest: !native,
       rolldownOptions: {
         input: {

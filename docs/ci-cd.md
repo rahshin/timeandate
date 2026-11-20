@@ -52,6 +52,6 @@ Suppose QA is testing `v0.2.0-rc.1`. New work has already landed on `main`, and 
 - **Production deploy or verification failed.** Inspect the job and current `/build-info.json` on production. If the stable tag has not been created, rerun promotion or restore the prior stable version.
 - **Release waiting for approval.** Open the **Release** run and review its plan output. The production secrets become available to the deployment job after review.
 - **Concurrent releases.** Release runs share one concurrency group. Avoid dispatching multiple pending releases, since a newer pending run can replace an older one.
-- **Mobile artifacts.** **Build mobile apps** is a separate manual workflow. A successful web release does not imply a signed native release.
+- **Mobile artifacts.** **Build mobile apps** produces debug QA artifacts. **Build signed mobile apps** produces signed Android and iOS packages for store QA and production. See the [mobile build guide](mobile.md) for signing setup and manual store distribution.
 
 A SHA-256 checksum detects changed or corrupted bytes. Control over publishing releases and writing release tags establishes who can supply those bytes.

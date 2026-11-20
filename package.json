@@ -14,7 +14,8 @@
     "mobile:build": "vite build --mode native",
     "mobile:sync": "npm run mobile:build && cap sync",
     "mobile:android": "cap open android",
-    "mobile:ios": "cap open ios"
+    "mobile:ios": "cap open ios",
+    "timer-dev:sync": "vite build --mode timer-dev && node scripts/sync-timer-dev.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.6.2",
