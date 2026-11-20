@@ -268,7 +268,7 @@ function renderSetupPage(root, type, types, navigate, editKey, record) {
       return;
     }
     const key = editKey ?? prefix + crypto.randomUUID();
-    saveRecord(key, { dashboardId, type, name: form.elements.timerName.value.trim(), value, created: record?.created ?? now });
+    saveRecord(key, { ...record, dashboardId, type, name: form.elements.timerName.value.trim(), value, created: record?.created ?? now });
     navigate(dashboardPath, true);
   };
 }
@@ -408,7 +408,7 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
         const index = dashboards.boards.findIndex(item => item.id === board.id);
         const boards = dashboards.boards.filter(item => item.id !== board.id);
         const replacement = boards[Math.min(index, boards.length - 1)].id;
-        saveDashboards({ boards, defaultId: dashboards.defaultId === board.id ? replacement : dashboards.defaultId });
+        saveDashboards({ ...dashboards, boards, defaultId: dashboards.defaultId === board.id ? replacement : dashboards.defaultId });
         for (const [key, record] of stored) {
           if (boardId(record) === board.id) saveRecord(key);
         }
@@ -432,7 +432,17 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
     const card = document.createElement("article");
     card.className = "card dashboard-card";
     card.innerHTML = `
-      <h2></h2>
+      <div class="dashboard-card-heading">
+        <h2></h2>
+        ${isClock ? "" : `<button type="button" class="secondary dashboard-mute">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M11 4 5 9H2v6h3l6 5z"/>
+            <path class="dashboard-speaker-waves" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>
+            <path class="dashboard-speaker-cross" d="m16 9 6 6m0-6-6 6"/>
+          </svg>
+        </button>`}
+      </div>
       <p class="dashboard-detail"></p>
       ${isClock
         ? '<time class="dashboard-clock"></time>'
@@ -447,6 +457,22 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
     const label = record.name || (isClock ? zone.split("/").at(-1) : definition.name);
     title.textContent = label;
     if (isClock) detail.textContent = zone;
+    const mute = card.querySelector(".dashboard-mute");
+    const linkedMute = () => dashboards.mutedLinkedTimers?.[key] === true;
+    if (mute) {
+      mute.setAttribute("aria-label", `Mute alerts for ${label}`);
+      mute.onclick = () => {
+        if (path) {
+          const mutedLinkedTimers = { ...dashboards.mutedLinkedTimers, [key]: !linkedMute() };
+          saveDashboards({ ...dashboards, mutedLinkedTimers });
+        } else {
+          const current = stored.get(key);
+          if (!current || boardId(current) !== activeId) return;
+          saveRecord(key, { ...current, muted: current.muted !== true });
+        }
+        redraw(key);
+      };
+    }
     let toggle;
     let reset;
     let edit;
@@ -508,6 +534,12 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
       }
       const current = path ? record : stored.get(key);
       if (!current) return;
+      const muted = path ? linkedMute() : current.muted === true;
+      const pressed = String(muted);
+      if (mute.getAttribute("aria-pressed") !== pressed) {
+        mute.setAttribute("aria-pressed", pressed);
+        mute.title = muted ? "Unmute timer alerts" : "Mute timer alerts";
+      }
       const view = definition.describe(current.value, now);
       const changed = previousStatus?.startsWith("Running") && previousStatus !== view.status &&
         (view.status.startsWith("Complete") || view.status.startsWith("Running"));
@@ -524,7 +556,7 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
         edit.hidden = running;
         if (reset) reset.disabled = view.status.startsWith("Ready");
       }
-      if (announce && changed) return `${label}. ${view.status}.`;
+      if (announce && changed && !muted) return `${label}. ${view.status}.`;
     });
     grid.append(card);
   }

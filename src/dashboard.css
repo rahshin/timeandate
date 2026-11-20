@@ -232,3 +232,27 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+.dashboard-card-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.dashboard-mute {
+  display: grid;
+  flex: 0 0 2.7rem;
+  place-items: center;
+  padding: 0.35rem;
+}
+
+.dashboard-mute[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.dashboard-mute[aria-pressed="true"] .dashboard-speaker-waves,
+.dashboard-mute[aria-pressed="false"] .dashboard-speaker-cross {
+  display: none;
+}
