@@ -12,3 +12,5 @@ artifacts/
 .DS_Store
 ios-build/
 timeandate-ios-simulator.zip
+
+/android/.idea/

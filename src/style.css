@@ -244,7 +244,7 @@ button:hover:not(:disabled) {
     align-items: flex-start;
     flex-direction: column;
     justify-content: center;
-    padding-block: 1rem;
+    padding-block: calc(1rem + env(safe-area-inset-top)) 1rem;
   }
   .timer-form .field {
     width: 100%;

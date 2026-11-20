@@ -256,3 +256,7 @@
 .dashboard-mute[aria-pressed="false"] .dashboard-speaker-cross {
   display: none;
 }
+
+.dashboard-timer-fields {
+  min-width: 0;
+}

@@ -2,9 +2,19 @@ name: Build mobile apps
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: App to package for debug QA
+        type: choice
+        options: [timeandate, timers-dev]
+        default: timeandate
+        required: true
 
 permissions:
   contents: read
+
+env:
+  NATIVE_ROOT: ${{ inputs.target == 'timers-dev' && 'artifacts/timer-dev' || '.' }}
 
 jobs:
   android:
@@ -25,13 +35,16 @@ jobs:
       - run: sdkmanager 'platforms;android-36'
       - run: npm ci
       - run: npm test
-      - run: npm run mobile:sync -- android
+      - if: inputs.target == 'timeandate'
+        run: npm run mobile:sync -- android
+      - if: inputs.target == 'timers-dev'
+        run: npm run timer-dev:sync
       - run: ./gradlew assembleDebug
-        working-directory: android
+        working-directory: ${{ env.NATIVE_ROOT }}/android
       - uses: actions/upload-artifact@v7
         with:
-          name: timeandate-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: ${{ inputs.target }}-android-debug
+          path: ${{ env.NATIVE_ROOT }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   ios:
     runs-on: macos-26
@@ -45,14 +58,17 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm run mobile:sync -- ios
+      - if: inputs.target == 'timeandate'
+        run: npm run mobile:sync -- ios
+      - if: inputs.target == 'timers-dev'
+        run: npm run timer-dev:sync
       - name: Build for iOS Simulator
         run: |
-          xcodebuild -project ios/App/App.xcodeproj -scheme App -sdk iphonesimulator \
+          xcodebuild -project "$NATIVE_ROOT/ios/App/App.xcodeproj" -scheme App -sdk iphonesimulator \
             -configuration Debug -derivedDataPath ios-build CODE_SIGNING_ALLOWED=NO build
           ditto -c -k --keepParent ios-build/Build/Products/Debug-iphonesimulator/App.app timeandate-ios-simulator.zip
       - uses: actions/upload-artifact@v7
         with:
-          name: timeandate-ios-simulator
+          name: ${{ inputs.target }}-ios-simulator
           path: timeandate-ios-simulator.zip
           if-no-files-found: error
