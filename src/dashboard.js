@@ -1,4 +1,5 @@
 import "./dashboard.css";
+import { playTone, unlockTone } from "./timeandate/audio.js";
 import { clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
 import {
   durationDisplay,
@@ -90,6 +91,47 @@ const worldClock = {
 
 const prefix = "timeandate.dashboard.";
 const stored = new Map();
+const dashboardsKey = "timeandate.dashboards";
+const originalId = "original";
+const initialDashboards = { boards: [{ id: originalId, name: "Dashboard" }], defaultId: originalId };
+
+function readDashboards(raw) {
+  try {
+    const saved = JSON.parse(raw);
+    if (Array.isArray(saved?.boards) && saved.boards.length &&
+        saved.boards.every(board => typeof board?.id === "string" && typeof board.name === "string") &&
+        new Set(saved.boards.map(board => board.id)).size === saved.boards.length &&
+        saved.boards.some(board => board.id === saved.defaultId)) return saved;
+  } catch {
+    // Fall back to the original dashboard when storage is unavailable.
+  }
+  return initialDashboards;
+}
+
+let dashboards = initialDashboards;
+try {
+  dashboards = readDashboards(localStorage.getItem(dashboardsKey));
+} catch {
+  // Dashboard selection still works with storage disabled.
+}
+let activeId = dashboards.defaultId;
+
+export function selectDefaultDashboard() {
+  activeId = dashboards.defaultId;
+}
+
+function saveDashboards(next) {
+  dashboards = next;
+  try {
+    localStorage.setItem(dashboardsKey, JSON.stringify(next));
+  } catch {
+    // Keep using the in-memory dashboards.
+  }
+}
+
+function boardId(record) {
+  return record.dashboardId ?? originalId;
+}
 
 function readRecord(key, raw) {
   try {
@@ -128,6 +170,7 @@ export const dashboardPath = "/dashboard";
 const addPath = dashboardPath + "/add";
 
 function renderAddPage(root, type, types, navigate) {
+  const dashboardId = activeId;
   const definition = Object.hasOwn(types, type) ? types[type] : undefined;
   const heading = definition?.name ?? "Add a timer or clock";
   document.title = `${heading} · Time And Date`;
@@ -166,6 +209,11 @@ function renderAddPage(root, type, types, navigate) {
 
   form.onsubmit = (event) => {
     event.preventDefault();
+    if (!dashboards.boards.some(board => board.id === dashboardId)) {
+      error.textContent = "This dashboard was removed. Go back to choose another dashboard.";
+      error.hidden = false;
+      return;
+    }
     const now = Date.now();
     let value;
     try {
@@ -176,7 +224,7 @@ function renderAddPage(root, type, types, navigate) {
       return;
     }
     const key = prefix + crypto.randomUUID();
-    saveRecord(key, { type, name: form.elements.timerName.value.trim(), value, created: now });
+    saveRecord(key, { dashboardId, type, name: form.elements.timerName.value.trim(), value, created: now });
     navigate(dashboardPath, true);
   };
 }
@@ -193,17 +241,131 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
 
   document.title = "Dashboard · Time And Date";
   root.innerHTML = `
+    <div class="dashboard-switcher">
+      <div class="dashboard-tabs" role="group" aria-label="Choose dashboard"></div>
+      <button type="button" class="dashboard-new secondary" aria-label="Add dashboard">+</button>
+    </div>
+    <dialog class="dashboard-create" aria-labelledby="dashboard-create-title">
+      <form class="dashboard-form">
+        <h2 id="dashboard-create-title">Add dashboard</h2>
+        <label class="field">Dashboard name <input name="name" maxlength="80" required autofocus></label>
+        <div class="dashboard-actions">
+          <button type="button" class="secondary dashboard-cancel">Cancel</button>
+          <button type="submit">Add dashboard</button>
+        </div>
+      </form>
+    </dialog>
     <header class="intro dashboard-heading">
-      <h1 tabindex="-1">Dashboard</h1>
+      <h1 tabindex="-1"></h1>
       <a href="${addPath}" class="dashboard-add" aria-label="Add timer or clock" data-route>+</a>
     </header>
-    <p class="dashboard-empty">Select + to add a timer or clock.</p>
+    <div class="dashboard-actions dashboard-preferences">
+      <button type="button" class="secondary dashboard-default"></button>
+      <label class="dashboard-checkbox"><input type="checkbox" class="dashboard-sound"> Timer sound</label>
+    </div>
+    <p class="dashboard-announcement" role="status"></p>
+    <p class="dashboard-empty">Use the + beside the dashboard name to add a timer or clock.</p>
     <section class="dashboard-grid" aria-label="Saved timers and clocks"></section>`;
 
   const add = root.querySelector(".dashboard-add");
   const grid = root.querySelector(".dashboard-grid");
   const empty = root.querySelector(".dashboard-empty");
   const cards = new Map();
+  const tabs = root.querySelector(".dashboard-tabs");
+  const heading = root.querySelector("h1");
+  const defaultButton = root.querySelector(".dashboard-default");
+  const sound = root.querySelector(".dashboard-sound");
+  const announcement = root.querySelector(".dashboard-announcement");
+  const create = root.querySelector(".dashboard-create");
+  const createForm = create.querySelector("form");
+  const nameInput = createForm.elements.name;
+  let wasVisible = false;
+
+  root.querySelector(".dashboard-new").onclick = () => {
+    createForm.reset();
+    nameInput.setCustomValidity("");
+    create.showModal();
+  };
+  root.querySelector(".dashboard-cancel").onclick = () => create.close();
+  nameInput.oninput = () => nameInput.setCustomValidity("");
+  createForm.onsubmit = event => {
+    event.preventDefault();
+    const name = nameInput.value.trim();
+    if (!name) {
+      nameInput.setCustomValidity("Enter a dashboard name.");
+      nameInput.reportValidity();
+      return;
+    }
+    activeId = crypto.randomUUID();
+    saveDashboards({ ...dashboards, boards: [...dashboards.boards, { id: activeId, name }] });
+    create.close();
+    refreshDashboard(true);
+  };
+
+  defaultButton.onclick = () => {
+    if (dashboards.defaultId === activeId) return;
+    saveDashboards({ ...dashboards, defaultId: activeId });
+    updatePreferences();
+  };
+  sound.onchange = () => {
+    if (sound.checked) unlockTone();
+    const boards = dashboards.boards.map(board => board.id === activeId ? { ...board, sound: sound.checked } : board);
+    saveDashboards({ ...dashboards, boards });
+  };
+
+  function updatePreferences() {
+    const isDefault = dashboards.defaultId === activeId;
+    defaultButton.textContent = isDefault ? "Default dashboard" : "Set as default";
+    defaultButton.setAttribute("aria-disabled", String(isDefault));
+    sound.checked = dashboards.boards.find(board => board.id === activeId).sound === true;
+  }
+
+  function refreshDashboard(focusTab = false) {
+    if (!dashboards.boards.some(board => board.id === activeId)) activeId = dashboards.defaultId;
+    const active = dashboards.boards.find(board => board.id === activeId);
+    heading.textContent = active.name;
+    updatePreferences();
+    tabs.replaceChildren();
+    for (const board of dashboards.boards) {
+      const tab = document.createElement("div");
+      tab.className = "dashboard-tab";
+      const select = document.createElement("button");
+      select.type = "button";
+      select.className = "secondary";
+      select.textContent = board.name;
+      select.setAttribute("aria-pressed", String(board.id === activeId));
+      select.onclick = () => {
+        if (board.id === activeId) return;
+        activeId = board.id;
+        if (board.sound) unlockTone();
+        refreshDashboard(true);
+      };
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "secondary dashboard-tab-remove";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", `Remove dashboard ${board.name}`);
+      remove.disabled = dashboards.boards.length === 1;
+      remove.onclick = () => {
+        if (!window.confirm(`Remove “${board.name}” and its saved timers and clocks?`)) return;
+        const index = dashboards.boards.findIndex(item => item.id === board.id);
+        const boards = dashboards.boards.filter(item => item.id !== board.id);
+        const replacement = boards[Math.min(index, boards.length - 1)].id;
+        saveDashboards({ boards, defaultId: dashboards.defaultId === board.id ? replacement : dashboards.defaultId });
+        for (const [key, record] of stored) {
+          if (boardId(record) === board.id) saveRecord(key);
+        }
+        if (activeId === board.id) activeId = replacement;
+        refreshDashboard(true);
+      };
+      tab.append(select, remove);
+      tabs.append(tab);
+    }
+    const selected = tabs.querySelector('[aria-pressed="true"]');
+    selected.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (focusTab) selected.focus({ preventScroll: true });
+    refresh();
+  }
 
   function addCard(key, record, path) {
     const definition = types[record.type];
@@ -262,7 +424,8 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
       actions.append(remove);
     }
 
-    cards.set(key, now => {
+    let previousStatus;
+    cards.set(key, (now, announce) => {
       if (formats) {
         const display = formats.time.format(now);
         const date = formats.date.format(now);
@@ -274,6 +437,9 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
       const current = path ? record : stored.get(key);
       if (!current) return;
       const view = definition.describe(current.value, now);
+      const changed = previousStatus?.startsWith("Running") && previousStatus !== view.status &&
+        (view.status.startsWith("Complete") || view.status.startsWith("Running"));
+      previousStatus = view.status;
       const description = record.name ? `${definition.name} · ${view.detail}` : view.detail;
       if (detail.textContent !== description) detail.textContent = description;
       if (clock.textContent !== view.display) clock.textContent = view.display;
@@ -283,45 +449,86 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
         toggle.hidden = !view.action;
         if (toggle.textContent !== view.action) toggle.textContent = view.action;
       }
+      if (announce && changed) return `${label}. ${view.status}.`;
     });
     grid.append(card);
   }
 
   function redraw() {
     const now = Date.now();
-    for (const update of cards.values()) update(now);
+    const visible = !document.hidden;
+    const messages = [];
+    for (const update of cards.values()) {
+      const message = update(now, visible && wasVisible);
+      if (message) messages.push(message);
+    }
+    wasVisible = visible;
+    if (messages.length) {
+      announcement.textContent = messages.join(" ");
+      if (sound.checked) playTone();
+    }
   }
 
   function refresh() {
+    wasVisible = false;
+    announcement.textContent = "";
     cards.clear();
     grid.replaceChildren();
-    const existing = [
+    // Standalone timers have their own routes and storage, independent of dashboard cards.
+    const linkedBoard = dashboards.boards.find(board => board.id === originalId) ?? dashboards.boards[0];
+    const existing = activeId === linkedBoard.id ? [
       ["date", existingDate(), countdownPath],
       ["duration", existingDuration(), durationPath],
       ["interval", interval?.existing(), intervalPath],
-    ];
+    ] : [];
     for (const [timerType, value, path] of existing) {
       if (value) addCard(timerType, { type: timerType, value }, path);
     }
     const records = [...stored].sort(([, left], [, right]) => left.created - right.created);
     for (const [key, record] of records) {
-      if (Object.hasOwn(types, record.type) && types[record.type].valid(record.value)) addCard(key, record);
+      if (boardId(record) === activeId && Object.hasOwn(types, record.type) &&
+          types[record.type].valid(record.value)) addCard(key, record);
     }
     empty.hidden = cards.size > 0;
     redraw();
   }
 
   function onStorage(event) {
-    if (event.key === null || event.key.startsWith("timeandate.")) refresh();
+    if (event.key === null || event.key === dashboardsKey) refreshDashboard();
+    else if (event.key.startsWith("timeandate.")) refresh();
   }
 
+  function enableSound() {
+    if (sound.checked) unlockTone();
+  }
+
+  function resetAnnouncements() {
+    wasVisible = false;
+    announcement.textContent = "";
+  }
+
+  root.addEventListener("pointerup", enableSound);
+  root.addEventListener("keydown", enableSound);
   window.addEventListener("storage", onStorage);
-  refresh();
-  root.querySelector("h1").focus();
-  return { redraw, unmount: () => window.removeEventListener("storage", onStorage) };
+  document.addEventListener("visibilitychange", resetAnnouncements, true);
+  refreshDashboard();
+  heading.focus({ preventScroll: true });
+  return {
+    redraw,
+    unmount() {
+      root.removeEventListener("pointerup", enableSound);
+      root.removeEventListener("keydown", enableSound);
+      window.removeEventListener("storage", onStorage);
+      document.removeEventListener("visibilitychange", resetAnnouncements, true);
+    },
+  };
 }
 
 window.addEventListener("storage", event => {
+  if (event.key === null || event.key === dashboardsKey) {
+    dashboards = readDashboards(event.newValue);
+    if (!dashboards.boards.some(board => board.id === activeId)) activeId = dashboards.defaultId;
+  }
   if (event.key === null) stored.clear();
   else if (event.key.startsWith(prefix)) readRecord(event.key, event.newValue);
 });

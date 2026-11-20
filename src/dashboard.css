@@ -142,3 +142,93 @@
   color: #ffc9be;
   margin: 0;
 }
+
+.dashboard-switcher {
+  display: flex;
+  align-items: start;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.dashboard-tabs {
+  display: flex;
+  gap: 0.35rem;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 0.25rem;
+}
+
+.dashboard-tab {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.dashboard-tab button:first-child {
+  max-width: min(16rem, 52vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.dashboard-tab-remove {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+
+.dashboard-tab button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.dashboard-new {
+  margin-top: 0.25rem;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.dashboard-heading {
+  margin: 2rem 0 1rem;
+}
+
+.dashboard-heading h1 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-preferences {
+  margin-bottom: 1rem;
+  gap: 1rem;
+}
+
+.dashboard-default[aria-disabled="true"] {
+  cursor: default;
+}
+
+.dashboard-announcement {
+  color: var(--accent);
+}
+
+.dashboard-announcement:empty {
+  margin: 0;
+}
+
+.dashboard-create {
+  width: min(27rem, calc(100% - 2rem));
+  background: var(--panel);
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  padding: 1.25rem;
+}
+
+.dashboard-create::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.dashboard-create h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
