@@ -85,6 +85,25 @@ test('automatic candidates use the pinned commit version and increment existing 
   assert.match(published.stderr, /Stable tag v0\.1\.0 already exists.*Bump package\.json/);
 });
 
+test('automatic promotion selects the highest published RC for an unshipped version', t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'timeandate-promote-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8' });
+  git('init', '--quiet');
+  git('-c', 'user.name=Release Test', '-c', 'user.email=release@example.test', 'commit', '--quiet', '--allow-empty', '-m', 'Initial commit');
+  for (const tag of ['v1.9.0-rc.99', 'v1.10.0-rc.2', 'v1.10.0-rc.10', 'v1.10.0-rc.11', 'v2.0.0-rc.4', 'v2.0.0']) {
+    git('tag', tag);
+  }
+  const resolveTag = input => spawnSync(process.execPath, [script, 'resolve-promote'], { cwd, encoding: 'utf8', input });
+  const published = resolveTag('v2.0.0-rc.4\nv1.10.0-rc.10\nv1.9.0-rc.99\nv1.10.0-rc.2\nv3.0.0-rc.1\n');
+  assert.equal(published.status, 0, published.stderr);
+  assert.equal(published.stdout.trim(), 'v1.10.0-rc.10');
+
+  const unavailable = resolveTag('v2.0.0-rc.4\nv3.0.0-rc.1\n');
+  assert.equal(unavailable.status, 1);
+  assert.match(unavailable.stderr, /No published release candidate is eligible/);
+});
+
 test('release smoke checks the standalone timer paths used by the selected bundle', async () => {
   const { verifyDeployment } = await import('./release-smoke.mjs');
   const origin = new URL('https://example.test');

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { smokeDeployment, validateDeploymentEnvironment } from './release-smoke.mjs';
 
 const candidatePattern = /^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-rc\.[1-9]\d*$/;
@@ -50,6 +50,25 @@ function resolveCandidateTag(tag, sha) {
   return `${stableTag}-rc.${highest + 1n}`;
 }
 
+function resolvePromotionTag(publishedTags) {
+  const tags = new Set(execFileSync('git', ['tag', '--list'], { encoding: 'utf8' }).trimEnd().split('\n'));
+  let selected;
+  let highest = [];
+  for (const tag of publishedTags.split('\n')) {
+    if (!candidatePattern.test(tag) || !tags.has(tag) || tags.has(tag.split('-rc.')[0])) continue;
+    const version = tag.slice(1).replace('-rc.', '.').split('.').map(BigInt);
+    const difference = version.findIndex((number, index) => number !== highest[index]);
+    if (!selected || (difference >= 0 && version[difference] > highest[difference])) {
+      selected = tag;
+      highest = version;
+    }
+  }
+  if (!selected) {
+    throw new Error('No published release candidate is eligible for promotion. Run candidate and verify it in QA first.');
+  }
+  return selected;
+}
+
 function validateReleaseInputs(operation, tag, sha) {
   if (!['candidate', 'promote', 'rollback'].includes(operation)) {
     return 'Choose candidate, promote, or rollback in the operation field.';
@@ -84,12 +103,14 @@ try {
     const error = validateReleaseInputs('candidate', resolved, sha);
     if (error) throw new Error(error);
     console.log(resolved);
+  } else if (command === 'resolve-promote') {
+    console.log(resolvePromotionTag(readFileSync(0, 'utf8')));
   } else if (command === 'check-deploy') {
     validateDeploymentEnvironment(process.env);
   } else if (command === 'smoke') {
     await smokeDeployment(operation);
   } else {
-    throw new Error('Choose a release command: validate, resolve-candidate, stamp, check-deploy, or smoke.');
+    throw new Error('Choose a release command: validate, resolve-candidate, resolve-promote, stamp, check-deploy, or smoke.');
   }
 } catch (error) {
   console.error(error.message);

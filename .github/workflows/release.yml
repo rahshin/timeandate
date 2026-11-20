@@ -9,7 +9,7 @@ on:
         options: [candidate, promote, rollback]
         required: true
       tag:
-        description: Optional for candidate. Use an existing RC tag for promote or a stable tag for rollback.
+        description: Optional for candidate and promote. Blank promote picks the highest eligible RC. Enter a stable tag for rollback.
         type: string
       source_sha:
         description: Optional full source SHA for candidate. Blank uses main at dispatch.
@@ -44,6 +44,7 @@ jobs:
         id: plan
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           OPERATION: ${{ inputs.operation }}
           TAG: ${{ inputs.tag }}
           SOURCE: ${{ inputs.source_sha }}
@@ -66,6 +67,14 @@ jobs:
               exit 1
             fi
           else
+            if [ "$OPERATION" = promote ] && [ -z "$TAG" ]; then
+              if ! RELEASES=$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+                --jq '.[] | select(.prerelease and (.draft | not)) | .tag_name'); then
+                echo 'Could not list published GitHub prereleases. Check repository access or enter an explicit RC tag.' >&2
+                exit 1
+              fi
+              TAG=$(node scripts/release.mjs resolve-promote <<< "$RELEASES")
+            fi
             node scripts/release.mjs validate "$OPERATION" "$TAG" "$SOURCE"
             if ! KIND=$(gh release view "$TAG" --json isDraft,isPrerelease --jq '[.isDraft,.isPrerelease] | join(" ")'); then
               echo "Could not load the release for $TAG. Check that it exists under Releases and is accessible, then retry." >&2
