@@ -28,6 +28,16 @@ flowchart LR
   D --> H["Backport fix by PR to main"]
 ```
 
+## Bring a fix from main into an open RC
+
+Suppose QA is testing `v0.2.0-rc.1`. New work has already landed on `main`, and a fix for an RC1 bug has also landed there. To include only the fix in `v0.2.0-rc.2`:
+
+1. If the release line does not exist yet, create and push `release/0.2` from the `v0.2.0-rc.1` tag.
+2. Create a fix branch from `release/0.2` and cherry-pick the bug-fix commit from `main`. If it depends on newer code, adapt the fix and its regression test to the release branch. Open a PR into `release/0.2`.
+3. After merging, wait for **push CI** on `release/0.2` to pass. Copy the full SHA of that tested commit.
+4. Run **Actions → Release** from workflow ref `main`. Set `operation` to `candidate`, `tag` to `v0.2.0-rc.2`, and `source_sha` to the tested release-branch SHA. A blank `source_sha` would select `main` and include its newer work.
+5. Verify the fix in QA and promote `v0.2.0-rc.2` after approval. The published RC1 remains available as its own tag and bundle.
+
 ## Run a release
 
 1. Merge a feature into `main` or a patch into the corresponding `release/<major>.<minor>` maintenance branch. Wait for the CI **push** run for that commit to succeed.
