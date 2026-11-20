@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 
 export function deploymentOrigin(value) {
@@ -40,7 +40,7 @@ async function fetchPage(origin, path, fetchPageImpl) {
   return response;
 }
 
-export async function verifyDeployment(origin, expected, fetchPageImpl = fetch) {
+export async function verifyDeployment(origin, expected, fetchPageImpl = fetch, { standalonePath, renamedTimerRoutes = false } = {}) {
   const response = await fetchPage(origin, '/build-info.json', fetchPageImpl);
   let actual;
   try {
@@ -51,10 +51,25 @@ export async function verifyDeployment(origin, expected, fetchPageImpl = fetch) 
   if (actual?.candidate !== expected.candidate || actual?.sourceSha !== expected.sourceSha) {
     throw new Error(`${origin.host} is serving a different build. Expected ${expected.candidate} (${expected.sourceSha}); received ${JSON.stringify({ candidate: actual?.candidate ?? null, sourceSha: actual?.sourceSha ?? null })}. Check which Worker DEPLOY_URL points to and whether the latest deployment is active.`);
   }
-  for (const path of ['/clocks?cities=london,tokyo', '/timer']) {
+  for (const path of ['/clocks?cities=london,tokyo', renamedTimerRoutes ? '/countdown' : '/timer']) {
     const page = await fetchPage(origin, path, fetchPageImpl);
     if (!(await page.text()).includes('id="app"')) {
       throw new Error(`${origin.host}${path} returned HTTP ${page.status} but did not serve Time And Date. Check the Worker’s static assets and single-page application routing.`);
+    }
+  }
+  if (standalonePath) {
+    const timerName = standalonePath.slice(1).replace(/-app$/, '');
+    const routes = [
+      [renamedTimerRoutes ? '/interval-timer-v0' : '/multi-timer', 'id="app"'],
+      [`${standalonePath}/`, '<main class="multi-standalone" id="app">'],
+      [`${standalonePath}/manifest.webmanifest`, '"display": "standalone"'],
+      [`${standalonePath}/sw.js`, `timeandate-${timerName}-`],
+    ];
+    for (const [path, marker] of routes) {
+      const response = await fetchPage(origin, path, fetchPageImpl);
+      if (!(await response.text()).includes(marker)) {
+        throw new Error(`${origin.host}${path} did not serve the expected interval timer build file. Check the deployed assets and route configuration.`);
+      }
     }
   }
 }
@@ -70,9 +85,12 @@ export async function smokeDeployment(value) {
   if (!expected?.candidate || !expected?.sourceSha) {
     throw new Error('The unpacked build manifest is missing its candidate tag or source SHA. Check the selected bundle or build a new candidate.');
   }
+  const standalonePath = ['/interval-timer-app', '/multi-timer-app']
+    .find(path => existsSync(`dist${path}/index.html`));
+  const renamedTimerRoutes = readFileSync('dist/index.html', 'utf8').includes('href="/countdown"');
   for (let attempt = 1; attempt <= 8; attempt++) {
     try {
-      return await verifyDeployment(origin, expected);
+      return await verifyDeployment(origin, expected, fetch, { standalonePath, renamedTimerRoutes });
     } catch (error) {
       if (attempt === 8) throw new Error(`Deployment verification failed after ${attempt} attempts. ${error.message}`);
       await delay(5000);

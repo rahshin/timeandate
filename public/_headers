@@ -1,2 +1,8 @@
 /build-info.json
   Cache-Control: no-store
+
+/interval-timer-app/
+  Cache-Control: no-cache
+
+/interval-timer-app/sw.js
+  Cache-Control: no-cache

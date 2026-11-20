@@ -2,8 +2,10 @@
 
 Time And Date includes time and date related utilities. It also contains GitHub Actions release pipeline that promotes the verified build from QA to production.
 
-- **World Clocks** compares the date and local time in selected cities. Add, remove, or move cities, then copy a link that preserves their order. Try `/clocks?cities=seattle,london,tokyo`.
-- **Timer** includes a date countdown for a target date, time, and timezone, plus a duration timer with hours, minutes, and seconds. Both modes are on `/timer` on the web. Android and iOS show **Date countdown** and **Duration timer** as separate screens. Both timers persist locally and show the active countdown in the browser tab title on the web. The duration timer supports pausing, resuming, and resetting. A browser may defer title updates while a tab is in the background.
+- **World Clocks** compares the date and local time in selected cities. Sort by city name (**A–Z** or **Z–A**) or by the current UTC offset (**lowest first** or **highest first**). The shared link preserves the order. Try `/clocks?cities=seattle,london,tokyo`.
+- **Dashboard** is the landing page and is also available at `/dashboard`. Select **+** to configure a timer or add a clock for any listed timezone. Each clock can show seconds. Dashboard items are saved on this device, and timers can run concurrently. The browser dashboard supports all three timer types, and the Capacitor dashboard supports the two countdown types.
+- **Countdown Timer** targets a date, time, and timezone. **Duration Countdown** counts down a specified number of hours, minutes, and seconds. Both are on `/countdown` on the web and on separate screens in the Capacitor app.
+- **Interval Timer** alternates activity and break phases until the last activity finishes. Set the activity count and phase lengths from the dashboard, at `/interval-timer-v0`, or in the standalone app at `/interval-timer-app/`. The default is three activities, with 10 minutes of activity and 5 minutes of break. Select **Include seconds** to reveal seconds fields.
 
 ## Run locally
 
@@ -17,8 +19,16 @@ npm run dev
 
 Vite prints the local URL. The production build is written to `dist/` by `npm run build`.
 
+## Install and use Interval Timer
+
+Configure the intervals and select **Start** to begin. The routine finishes after the last activity. Use **Pause**, **Resume**, and **Reset** to control it. The settings, timer, and sound preference are saved in local browser storage.
+
+Open `/interval-timer-app/` over HTTPS and use your browser’s install or Add to Home Screen option when available. After the first successful online load, the standalone app caches its files so it can reopen offline. To test this locally, run `npm run build` followed by `npm run preview`, visit the standalone URL, and reload with the browser set to offline. The service worker is registered by the production build.
+
+Keep the app open for reliable alerts. Sound may not play while your device is locked or the app is in the background. When you return, the timer catches up from its saved deadline.
+
 ## Release pipeline
 
 The [CI/CD guide](docs/ci-cd.md) shows the feature and patch flows, including review, artifact verification, and rollback. See [deployment setup](docs/setup.md) for GitHub and Cloudflare configuration and [mobile builds](docs/mobile.md) for Android and iOS.
 
-The web app runs in Cloudflare Workers Static Assets and the native apps wrap the same source with Capacitor.
+The web app and standalone PWA run in Cloudflare Workers Static Assets. The existing Capacitor apps use a separate build target. The [Substack draft](docs/multi-timer-cicd-substack.md) and [portfolio case study](docs/multi-timer-cicd-portfolio.md) use Multi Timer to walk through both targets and the release pipeline.

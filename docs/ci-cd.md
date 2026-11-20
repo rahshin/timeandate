@@ -6,7 +6,7 @@
 flowchart LR
   A["Push feature branch"] --> B["PR to main"]
   B --> C["Required CI<br />Workflow lint, tests, build"]
-  C --> D["Merge and verify push CI"]
+  C --> D["Merge and verify push CI<br />Web and Capacitor build targets"]
   D --> E["Candidate v1.3.0-rc.1<br />Build once and checksum"]
   E --> F["Deploy to QA and smoke-test"]
   F --> G["Publish prerelease"]
@@ -42,7 +42,7 @@ Suppose QA is testing `v0.2.0-rc.1`. New work has already landed on `main`, and 
 
 1. Merge a feature into `main` or a patch into the corresponding `release/<major>.<minor>` maintenance branch. Wait for the CI **push** run for that commit to succeed.
 2. From **Actions → Release → Run workflow**, select workflow ref `main` and operation `candidate`. Leave `source_sha` blank to build the commit at `main` when you start the run. Leave `tag` blank to use the selected commit’s `package.json` version and the next RC number, for example `v0.1.0-rc.1`. Enter a full source SHA for a maintenance branch or an explicit RC tag to override the defaults. Once a version ships, bump `package.json` before cutting the next automatic candidate.
-3. The run checks the commit and CI, builds the bundle, stamps its source SHA and candidate tag, and computes a SHA-256 checksum. QA deploys that bundle and checks live identity and that both app routes load. A successful QA run publishes the bundle and checksum as prerelease assets. Test the user-facing behavior on QA before promoting.
+3. The run checks the commit and CI, builds the web bundle, stamps its source SHA and candidate tag, and computes a SHA-256 checksum. QA deploys the bundle and checks its live identity and key routes. When the bundle includes Multi Timer, smoke checks also cover the integrated route, standalone page, manifest, and service worker. A successful QA run publishes the bundle and checksum as prerelease assets. Test the user-facing behavior on QA before promoting.
 4. Dispatch `promote` with the candidate tag. Review the plan summary and digest and select **Review deployments → Approve and deploy**. The production job deploys the verified candidate bundle, validates live identity, and publishes the stable tag and release with identical assets. The deployed manifest retains the original candidate tag to identify the payload. The stable release notes link it to the release version.
 5. If production needs recovery, dispatch `rollback` with an earlier stable tag. Review and approve it through the same production environment. Rollback uses the saved bundle and verifies the live result.
 

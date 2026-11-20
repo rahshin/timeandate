@@ -8,10 +8,11 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/build-interval-timer-sw.mjs",
     "test": "node --test",
     "preview": "vite preview",
-    "mobile:sync": "npm run build && cap sync",
+    "mobile:build": "vite build --mode native",
+    "mobile:sync": "npm run mobile:build && cap sync",
     "mobile:android": "cap open android",
     "mobile:ios": "cap open ios"
   },

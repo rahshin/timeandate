@@ -84,3 +84,32 @@ test('automatic candidates use the pinned commit version and increment existing 
   assert.equal(published.status, 1);
   assert.match(published.stderr, /Stable tag v0\.1\.0 already exists.*Bump package\.json/);
 });
+
+test('release smoke checks the standalone timer paths used by the selected bundle', async () => {
+  const { verifyDeployment } = await import('./release-smoke.mjs');
+  const origin = new URL('https://example.test');
+  const expected = { candidate: 'v0.2.0-rc.1', sourceSha: sha };
+  const legacy = async url => url.pathname === '/build-info.json'
+    ? Response.json(expected)
+    : new Response('<main id="app"></main>');
+  await verifyDeployment(origin, expected, legacy);
+  await assert.rejects(verifyDeployment(origin, expected, legacy, { standalonePath: '/interval-timer-app' }),
+    /interval-timer-app\/ did not serve the expected interval timer build file/);
+  for (const [timerName, countdownPath, timerPath] of [
+    ['multi-timer', '/timer', '/multi-timer'],
+    ['interval-timer', '/countdown', '/interval-timer-v0'],
+  ]) {
+    const standalonePath = `/${timerName}-app`;
+    const files = {
+      [`${standalonePath}/`]: '<main class="multi-standalone" id="app">',
+      [`${standalonePath}/manifest.webmanifest`]: '{"display": "standalone"}',
+      [`${standalonePath}/sw.js`]: `const CACHE = "timeandate-${timerName}-demo";`,
+    };
+    const paths = [];
+    await verifyDeployment(origin, expected, async url => {
+      paths.push(url.pathname);
+      return Object.hasOwn(files, url.pathname) ? new Response(files[url.pathname]) : legacy(url);
+    }, { standalonePath, renamedTimerRoutes: countdownPath === '/countdown' });
+    assert.deepEqual(paths.slice(1), ['/clocks', countdownPath, timerPath, ...Object.keys(files)]);
+  }
+});

@@ -11,6 +11,12 @@ export function durationRemaining(timer, now = Date.now()) {
   return timer ? Math.max(0, timer.endAt === null ? timer.remaining : timer.endAt - now) : 0;
 }
 
+export function toggleDuration(timer, now) {
+  const remaining = durationRemaining(timer, now);
+  if (!remaining) return timer;
+  return { ...timer, remaining, endAt: timer.endAt === null ? now + remaining : null };
+}
+
 export function durationDisplay(remaining) {
   const seconds = Math.ceil(remaining / millisecond);
   return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60]
