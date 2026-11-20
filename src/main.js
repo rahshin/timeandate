@@ -1,18 +1,33 @@
 import { Capacitor } from "@capacitor/core";
 import "./style.css";
 import { cities, cityIds, countdown, targetInstant } from "./time.js";
+import {
+  durationDisplay,
+  durationMilliseconds,
+  durationRemaining,
+  isDurationTimer,
+} from "./duration.js";
 
 const app = document.querySelector("#app");
 const links = [...document.querySelectorAll("nav a")];
+const isNative = Capacitor.isNativePlatform();
+const dateLink = links.find(link => link.pathname === "/timer");
+const durationLink = links.find(link => link.pathname === "/duration");
+if (isNative) {
+  dateLink.textContent = "Date countdown";
+  durationLink.hidden = false;
+}
 const params = () => new URL(location.href).searchParams;
 let redraw = () => {};
 let timerDraft;
 const timerKey = "timeandate.timer";
+const durationKey = "timeandate.duration";
+let durationTimer;
 
-function saveTimer() {
+function saveTimer(key, value) {
   try {
-    if (timerDraft) localStorage.setItem(timerKey, JSON.stringify(timerDraft));
-    else localStorage.removeItem(timerKey);
+    if (value) localStorage.setItem(key, JSON.stringify(value));
+    else localStorage.removeItem(key);
   } catch {
     // The active timer still works when device storage is unavailable.
   }
@@ -126,7 +141,7 @@ function renderClocks() {
     try {
       if (
         !["http:", "https:"].includes(location.protocol) ||
-        Capacitor.isNativePlatform()
+        isNative
       ) {
         throw new Error("No public address");
       }
@@ -160,14 +175,14 @@ function renderClocks() {
 
 const units = { years: "y", months: "mo", days: "d", hours: "h", minutes: "m" };
 
-function renderTimer() {
+function renderDateTimer(panel) {
   const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const timeZones = [
     ...new Set([localZone, "UTC", ...Intl.supportedValuesOf("timeZone")]),
   ].sort();
-  app.innerHTML = `
-    <section class="intro"><h1>Timer</h1><p>Count down to a date in any timezone.</p></section>
-    <form class="timer-form card">
+  panel.innerHTML = `
+    <h2>Date countdown</h2>
+    <form class="timer-form card" aria-label="Date countdown">
       <div class="field"><label for="target">Target date and time</label><input id="target" type="datetime-local" step="60" required></div>
       <div class="field"><label for="timezone">Timezone</label><select id="timezone"></select></div>
       <button type="submit">Start countdown</button>
@@ -183,11 +198,11 @@ function renderTimer() {
         .join("")}
     </section>
     <p id="timer-status" role="status"></p>`;
-  const form = app.querySelector("form");
+  const form = panel.querySelector("form");
   const zone = form.querySelector("#timezone");
   const target = form.querySelector("#target");
   const error = form.querySelector("#error");
-  const status = app.querySelector("#timer-status");
+  const status = panel.querySelector("#timer-status");
   for (const id of timeZones) zone.add(new Option(id.replaceAll("_", " "), id));
   zone.value = timerDraft?.zone || localZone;
   target.value = timerDraft?.wallTime || "";
@@ -198,7 +213,7 @@ function renderTimer() {
       if (!countdown(instant, zone.value))
         throw new Error("Date already passed");
       timerDraft = { wallTime: target.value, zone: zone.value, instant };
-      saveTimer();
+      saveTimer(timerKey, timerDraft);
       error.hidden = true;
       redraw();
     } catch (issue) {
@@ -211,13 +226,16 @@ function renderTimer() {
   };
   form.querySelector("#clear").onclick = () => {
     timerDraft = undefined;
-    saveTimer();
-    render();
+    saveTimer(timerKey, timerDraft);
+    target.value = "";
+    zone.value = localZone;
+    error.hidden = true;
+    redraw();
   };
-  redraw = () => {
+  return () => {
     const parts = timerDraft && countdown(timerDraft.instant, timerDraft.zone);
     for (const unit of Object.keys(units))
-      app.querySelector(`[data-unit="${unit}"]`).textContent =
+      panel.querySelector(`[data-unit="${unit}"]`).textContent =
         parts?.[unit] ?? (timerDraft ? "0" : "—");
     const title =
       parts &&
@@ -225,31 +243,127 @@ function renderTimer() {
         .filter(([, value]) => value)
         .map(([key, value]) => `${value}${units[key]}`)
         .join(" ");
-    document.title = title
-      ? `${title} · Time And Date`
-      : timerDraft
-        ? "Time is up · Time And Date"
-        : "Timer · Time And Date";
     const label = timerDraft
       ? parts
         ? ""
         : "Time is up."
       : "Set a target to start.";
     if (status.textContent !== label) status.textContent = label;
+    return title || (timerDraft ? "Date countdown ended" : "");
+  };
+}
+
+function renderDurationTimer(panel) {
+  panel.innerHTML = `
+    <h2>Duration timer</h2>
+    <form class="timer-form card" aria-label="Duration timer">
+      <div class="duration-fields">
+        <div class="field"><label for="duration-hours">Hours</label><input id="duration-hours" name="hours" type="number" min="0" max="999" step="1" value="0" required></div>
+        <div class="field"><label for="duration-minutes">Minutes</label><input id="duration-minutes" name="minutes" type="number" min="0" max="59" step="1" value="10" required></div>
+        <div class="field"><label for="duration-seconds">Seconds</label><input id="duration-seconds" name="seconds" type="number" min="0" max="59" step="1" value="0" required></div>
+      </div>
+      <button type="submit">Start timer</button>
+      <button type="button" class="secondary" id="duration-toggle" disabled>Pause</button>
+      <button type="button" class="secondary" id="duration-reset" disabled>Reset</button>
+      <p id="duration-error" role="alert" hidden></p>
+    </form>
+    <div class="card duration-clock" role="timer" aria-label="Duration remaining"></div>
+    <p id="duration-status" role="status"></p>`;
+  const form = panel.querySelector("form");
+  const fields = ["hours", "minutes", "seconds"].map(name => form.elements.namedItem(name));
+  const toggle = panel.querySelector("#duration-toggle");
+  const reset = panel.querySelector("#duration-reset");
+  const error = panel.querySelector("#duration-error");
+  const clock = panel.querySelector(".duration-clock");
+  const status = panel.querySelector("#duration-status");
+
+  if (durationTimer) {
+    durationDisplay(durationTimer.initial).split(":").forEach((value, index) => {
+      fields[index].value = Number(value);
+    });
+  }
+
+  function setDuration(value) {
+    durationTimer = value;
+    saveTimer(durationKey, value);
+    error.hidden = true;
+    redraw();
+  }
+
+  form.onsubmit = event => {
+    event.preventDefault();
+    const remaining = durationMilliseconds(...fields.map(field => field.valueAsNumber));
+    if (!remaining) {
+      error.textContent = "Enter a duration greater than zero.";
+      error.hidden = false;
+      return;
+    }
+    setDuration({ initial: remaining, remaining, endAt: Date.now() + remaining });
+  };
+  toggle.onclick = () => {
+    const now = Date.now();
+    const remaining = durationRemaining(durationTimer, now);
+    if (!remaining) return redraw();
+    setDuration({
+      ...durationTimer,
+      remaining,
+      endAt: durationTimer.endAt === null ? now + remaining : null,
+    });
+  };
+  reset.onclick = () => setDuration(undefined);
+
+  return () => {
+    const remaining = durationRemaining(durationTimer);
+    const display = durationDisplay(remaining);
+    const paused = durationTimer?.endAt === null;
+    if (clock.textContent !== display) clock.textContent = display;
+    toggle.disabled = remaining === 0;
+    toggle.textContent = paused ? "Resume" : "Pause";
+    reset.disabled = !durationTimer;
+    const label = !durationTimer ? "" : !remaining ? "Timer complete." : paused ? "Timer paused." : "Timer running.";
+    if (status.textContent !== label) status.textContent = label;
+    return durationTimer ? (remaining ? `${display}${paused ? " paused" : ""}` : "Timer complete") : "";
+  };
+}
+
+function renderTimers(durationOnly) {
+  const showDate = !isNative || !durationOnly;
+  const showDuration = !isNative || durationOnly;
+  const heading = !isNative ? "Timer" : durationOnly ? "Duration timer" : "Date countdown";
+  app.innerHTML = `
+    <section class="intro">
+      <h1>${heading}</h1>
+      ${isNative ? "" : "<p>Count down to a date and time, or set a timer for a duration.</p>"}
+    </section>
+    <div class="timer-panels${isNative ? " native-timer" : ""}">
+      ${showDate ? '<section id="date-panel"></section>' : ""}
+      ${showDuration ? '<section id="duration-panel"></section>' : ""}
+    </div>`;
+  const date = showDate ? renderDateTimer(app.querySelector("#date-panel")) : null;
+  const duration = showDuration ? renderDurationTimer(app.querySelector("#duration-panel")) : null;
+  redraw = () => {
+    const dateTitle = date?.();
+    const durationTitle = duration?.();
+    const titles = durationRemaining(durationTimer) > 0
+      ? [durationTitle, dateTitle]
+      : [dateTitle, durationTitle];
+    document.title = `${titles.filter(Boolean).join(" / ") || heading} · Time And Date`;
   };
 }
 
 function render() {
-  const isTimer = location.pathname === "/timer";
+  const durationOnly = location.pathname === "/duration";
+  const isTimer = location.pathname === "/timer" || durationOnly;
+  const activePath = isTimer ? (isNative && durationOnly ? "/duration" : "/timer") : "/clocks";
   document.title = isTimer
     ? "Timer · Time And Date"
     : "World Clocks · Time And Date";
   for (const link of links) {
-    if (link.pathname === (isTimer ? "/timer" : "/clocks"))
+    if (link.pathname === activePath)
       link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   }
-  if (isTimer) renderTimer();
+  if (isTimer) renderTimers(durationOnly);
   else renderClocks();
   redraw();
 }
@@ -258,6 +372,12 @@ try {
   const saved = JSON.parse(localStorage.getItem(timerKey));
   if (saved && targetInstant(saved.wallTime, saved.zone) === saved.instant)
     timerDraft = saved;
+} catch {
+  // Ignore stale or unavailable device storage.
+}
+try {
+  const saved = JSON.parse(localStorage.getItem(durationKey));
+  if (isDurationTimer(saved)) durationTimer = saved;
 } catch {
   // Ignore stale or unavailable device storage.
 }

@@ -253,3 +253,58 @@ button:hover:not(:disabled) {
     width: 100%;
   }
 }
+
+.timer-panels {
+  display: grid;
+  gap: 2.5rem;
+}
+
+.timer-panels h2 {
+  margin: 0 0 0.75rem;
+}
+
+.native-timer h2 {
+  display: none;
+}
+
+.duration-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  width: min(100%, 20rem);
+}
+
+.duration-fields .field:first-child {
+  min-width: 0;
+}
+
+.duration-fields input {
+  width: 100%;
+}
+
+.duration-clock {
+  font-size: clamp(2.1rem, 8vw, 4rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+#duration-status {
+  color: var(--muted);
+}
+
+#duration-error {
+  color: #ffc9be;
+  flex-basis: 100%;
+  margin: 0;
+}
+
+@media (max-width: 42rem) {
+  .masthead nav {
+    flex-wrap: wrap;
+  }
+
+  .duration-fields {
+    width: 100%;
+  }
+}
