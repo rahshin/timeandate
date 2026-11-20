@@ -1,4 +1,5 @@
 import "./dashboard.css";
+import { Temporal } from "@js-temporal/polyfill";
 import { playTone, unlockTone } from "./timeandate/audio.js";
 import { clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
 import {
@@ -15,22 +16,38 @@ const dateCountdown = {
   fields: `
     <label class="field">Target date and time <input name="target" type="datetime-local" required></label>
     <label class="field">Timezone <select name="timezone"></select></label>`,
-  init: fields => fillTimeZones(fields.timezone),
-  create: fields => createDateTimer(fields.target.value, fields.timezone.value),
+  init(fields, value) {
+    fillTimeZones(fields.timezone);
+    if (value) {
+      fields.target.value = value.wallTime;
+      fields.timezone.value = value.zone;
+    }
+  },
+  create(fields, now) {
+    return { ...createDateTimer(fields.target.value, fields.timezone.value), holdAt: now, ready: true };
+  },
+  toggle(timer, now) {
+    const { holdAt, ready, ...target } = timer;
+    if (holdAt !== undefined) return target;
+    return Date.parse(timer.instant) > now ? { ...target, holdAt: now } : timer;
+  },
   valid: validDateTimer,
   describe(timer, now) {
-    const milliseconds = Math.max(0, Date.parse(timer.instant) - now);
+    const time = timer.holdAt ?? now;
+    const milliseconds = Math.max(0, Date.parse(timer.instant) - time);
+    const held = timer.holdAt !== undefined;
     let display = durationDisplay(milliseconds);
     if (milliseconds >= 3_600_000) {
       const units = { years: "y", months: "mo", days: "d", hours: "h", minutes: "m" };
-      display = Object.entries(countdown(timer.instant, timer.zone) ?? {})
+      display = Object.entries(countdown(timer.instant, timer.zone, Temporal.Instant.fromEpochMilliseconds(time)) ?? {})
         .filter(([, value]) => value > 0)
         .map(([unit, value]) => `${value}${units[unit]}`)
         .join(" ") || display;
     }
     return {
       display,
-      status: milliseconds ? "Running" : "Complete",
+      status: held ? (timer.ready ? "Ready" : "Paused") : milliseconds ? "Running" : "Complete",
+      action: held ? (timer.ready ? "Play" : "Resume") : milliseconds ? "Pause" : "",
       detail: `${timer.wallTime.replace("T", " ")} · ${timer.zone.replaceAll("_", " ")}`,
     };
   },
@@ -45,10 +62,17 @@ const durationCountdown = {
       <label class="field">Minutes <input name="minutes" type="number" min="0" max="59" step="1" value="10" required></label>
       <label class="field">Seconds <input name="seconds" type="number" min="0" max="59" step="1" value="0" required></label>
     </div>`,
-  create(fields, now) {
+  init(fields, value) {
+    if (!value) return;
+    const [hours, minutes, seconds] = durationDisplay(value.initial).split(":").map(Number);
+    fields.hours.value = hours;
+    fields.minutes.value = minutes;
+    fields.seconds.value = seconds;
+  },
+  create(fields) {
     const initial = durationMilliseconds(fields.hours.valueAsNumber, fields.minutes.valueAsNumber, fields.seconds.valueAsNumber);
     if (!initial) throw new Error("Enter a duration greater than zero.");
-    return { initial, remaining: initial, endAt: now + initial };
+    return { initial, remaining: initial, endAt: null, ready: true };
   },
   valid: isDurationTimer,
   describe(timer, now) {
@@ -56,12 +80,20 @@ const durationCountdown = {
     const paused = timer.endAt === null;
     return {
       display: durationDisplay(remaining),
-      status: remaining ? (paused ? "Paused" : "Running") : "Complete",
-      action: remaining ? (paused ? "Resume" : "Pause") : "",
+      status: remaining ? (paused ? (timer.ready ? "Ready" : "Paused") : "Running") : "Complete",
+      action: paused && !timer.ready ? "Resume" : remaining && !paused ? "Pause" : "Play",
       detail: `Duration ${durationDisplay(timer.initial)}`,
     };
   },
-  toggle: toggleDuration,
+  toggle(timer, now) {
+    if (!durationRemaining(timer, now)) return toggleDuration(this.reset(timer, now), now);
+    return { ...toggleDuration(timer, now), ready: false };
+  },
+  reset(timer, now) {
+    const running = timer.endAt !== null && durationRemaining(timer, now) > 0;
+    return { initial: timer.initial, remaining: timer.initial,
+      endAt: running ? now + timer.initial : null, ready: !running };
+  },
 };
 
 const worldClock = {
@@ -168,15 +200,20 @@ function saveRecord(key, record) {
 
 export const dashboardPath = "/dashboard";
 const addPath = dashboardPath + "/add";
+const editPath = dashboardPath + "/edit/";
 
-function renderAddPage(root, type, types, navigate) {
+function canEdit(definition, value, now) {
+  return Boolean(definition.toggle) && !definition.describe(value, now).status.startsWith("Running");
+}
+
+function renderSetupPage(root, type, types, navigate, editKey, record) {
   const dashboardId = activeId;
   const definition = Object.hasOwn(types, type) ? types[type] : undefined;
-  const heading = definition?.name ?? "Add a timer or clock";
+  const heading = record ? `Edit ${definition.name}` : definition?.name ?? "Add a timer or clock";
   document.title = `${heading} · Time And Date`;
   root.innerHTML = `
     <header class="intro dashboard-setup-heading">
-      <a href="${definition ? addPath : dashboardPath}" data-route>${definition ? "Choose a different type" : "Back to dashboard"}</a>
+      <a href="${definition && !record ? addPath : dashboardPath}" data-route>${definition && !record ? "Choose a different type" : "Back to dashboard"}</a>
       <h1 tabindex="-1">${heading}</h1>
       <p>${definition ? definition.description : "Choose what to add to your dashboard."}</p>
     </header>
@@ -187,7 +224,7 @@ function renderAddPage(root, type, types, navigate) {
         <p class="dashboard-error" role="alert" hidden></p>
         <div class="dashboard-actions">
           <a href="${dashboardPath}" data-route>Cancel</a>
-          <button type="submit">Add</button>
+          <button type="submit">${record ? "Save changes" : "Add"}</button>
         </div>
       </form>` : `
       <ul class="dashboard-grid dashboard-types">
@@ -204,7 +241,8 @@ function renderAddPage(root, type, types, navigate) {
   if (!definition) return;
   const form = root.querySelector("form");
   const error = form.querySelector(".dashboard-error");
-  definition.init?.(form.elements);
+  definition.init?.(form.elements, record?.value);
+  if (record) form.elements.timerName.value = record.name;
   form.oninput = () => { error.hidden = true; };
 
   form.onsubmit = (event) => {
@@ -215,6 +253,12 @@ function renderAddPage(root, type, types, navigate) {
       return;
     }
     const now = Date.now();
+    const current = editKey && stored.get(editKey);
+    if (editKey && (!current || current !== record || !canEdit(definition, current.value, now))) {
+      error.textContent = "This timer changed. Reopen it to edit its current configuration.";
+      error.hidden = false;
+      return;
+    }
     let value;
     try {
       value = definition.create(form.elements, now);
@@ -223,8 +267,8 @@ function renderAddPage(root, type, types, navigate) {
       error.hidden = false;
       return;
     }
-    const key = prefix + crypto.randomUUID();
-    saveRecord(key, { dashboardId, type, name: form.elements.timerName.value.trim(), value, created: now });
+    const key = editKey ?? prefix + crypto.randomUUID();
+    saveRecord(key, { dashboardId, type, name: form.elements.timerName.value.trim(), value, created: record?.created ?? now });
     navigate(dashboardPath, true);
   };
 }
@@ -234,8 +278,21 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
   if (interval) types.interval = interval;
   types.clock = worldClock;
 
+  if (path.startsWith(editPath)) {
+    const key = prefix + path.slice(editPath.length);
+    const record = stored.get(key);
+    const definition = record && Object.hasOwn(types, record.type) && types[record.type];
+    if (definition && boardId(record) === activeId && definition.valid(record.value) &&
+        canEdit(definition, record.value, Date.now())) {
+      renderSetupPage(root, record.type, types, navigate, key, record);
+      return;
+    }
+    navigate(dashboardPath, true);
+    return;
+  }
+
   if (path !== dashboardPath) {
-    renderAddPage(root, path.slice(addPath.length + 1), types, navigate);
+    renderSetupPage(root, path.slice(addPath.length + 1), types, navigate);
     return;
   }
 
@@ -391,6 +448,8 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
     title.textContent = label;
     if (isClock) detail.textContent = zone;
     let toggle;
+    let reset;
+    let edit;
 
     if (path) {
       const link = document.createElement("a");
@@ -399,17 +458,30 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
       link.textContent = "Manage timer";
       actions.append(link);
     } else {
-      if (definition.toggle) {
-        toggle = document.createElement("button");
-        toggle.type = "button";
-        toggle.className = "secondary";
-        toggle.onclick = () => {
+      function timerButton(text, update) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "secondary";
+        button.textContent = text;
+        button.onclick = () => {
           const current = stored.get(key);
-          if (!current) return;
-          saveRecord(key, { ...current, value: definition.toggle(current.value, Date.now()) });
-          redraw();
+          if (!current || boardId(current) !== activeId) return;
+          saveRecord(key, { ...current, value: update.call(definition, current.value, Date.now()) });
+          redraw(key);
         };
-        actions.append(toggle);
+        actions.append(button);
+        return button;
+      }
+
+      if (definition.toggle) {
+        toggle = timerButton("Play", definition.toggle);
+        if (definition.reset) reset = timerButton("Reset", definition.reset);
+        edit = document.createElement("a");
+        edit.href = editPath + key.slice(prefix.length);
+        edit.dataset.route = "";
+        edit.textContent = "Edit";
+        edit.setAttribute("aria-label", `Edit ${label}`);
+        actions.append(edit);
       }
       const remove = document.createElement("button");
       remove.type = "button";
@@ -444,22 +516,25 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
       if (detail.textContent !== description) detail.textContent = description;
       if (clock.textContent !== view.display) clock.textContent = view.display;
       if (status.textContent !== view.status) status.textContent = view.status;
-      card.dataset.running = String(view.status.startsWith("Running"));
+      const running = view.status.startsWith("Running");
+      card.dataset.running = String(running);
       if (toggle) {
         toggle.hidden = !view.action;
         if (toggle.textContent !== view.action) toggle.textContent = view.action;
+        edit.hidden = running;
+        if (reset) reset.disabled = view.status.startsWith("Ready");
       }
       if (announce && changed) return `${label}. ${view.status}.`;
     });
     grid.append(card);
   }
 
-  function redraw() {
+  function redraw(commandKey) {
     const now = Date.now();
     const visible = !document.hidden;
     const messages = [];
-    for (const update of cards.values()) {
-      const message = update(now, visible && wasVisible);
+    for (const [key, update] of cards) {
+      const message = update(now, visible && wasVisible && key !== commandKey);
       if (message) messages.push(message);
     }
     wasVisible = visible;
