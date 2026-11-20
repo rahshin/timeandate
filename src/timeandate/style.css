@@ -1,0 +1,76 @@
+.multi-timer {
+  --multi-status-space: 1.5rem;
+  width: min(100%, 34rem);
+  margin: clamp(2.5rem, 8vw, 5rem) auto 0;
+}
+
+.multi-intro { margin-bottom: 1.5rem; }
+.multi-intro h1 {
+  margin: 0;
+  font-size: clamp(2.6rem, 8vw, 4.5rem);
+  line-height: 1.05;
+  letter-spacing: -0.055em;
+}
+
+.multi-intro p, .multi-next, .multi-cycle, .multi-footer, .multi-status {
+  color: var(--muted);
+}
+
+.multi-panel {
+  --phase-color: #8de8d1;
+  padding: clamp(1rem, 5vw, 2rem);
+  border-top: 3px solid var(--phase-color);
+}
+
+.multi-panel[data-phase="break"] { --phase-color: #bad0ff; }
+
+.multi-phase-row, .multi-footer-row, .multi-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.multi-phase-row, .multi-footer-row { justify-content: space-between; }
+.multi-footer-row { flex-wrap: wrap; }
+.multi-phase { color: var(--phase-color); font-weight: 700; font-size: 1.125rem; }
+
+.multi-clock {
+  margin: 0.5rem 0 0.75rem;
+  font-size: clamp(3.2rem, 13vw, 7rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+
+.multi-progress {
+  width: 100%;
+  height: 0.65rem;
+  accent-color: var(--phase-color);
+  border: 0;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: #303b50;
+}
+
+.multi-progress::-webkit-progress-bar { background: #303b50; }
+.multi-progress::-webkit-progress-value { background: var(--phase-color); }
+.multi-progress::-moz-progress-bar { background: var(--phase-color); }
+.multi-controls button, .multi-sound { min-height: 2.75rem; }
+.multi-primary { flex: 1; background: var(--phase-color); }
+.multi-panel .interval-settings { margin: 0.85rem 0 1.15rem; }
+.multi-settings-error { color: #ffc9be; margin: 0 0 0.75rem; }
+.multi-status { min-height: var(--multi-status-space); margin: 0.75rem 0 0; }
+.multi-footer { margin-top: 1rem; }
+.multi-footer a { color: var(--accent); text-decoration: underline; }
+.multi-footer-row p { margin: 0; }
+
+.multi-standalone {
+  padding: env(safe-area-inset-top) max(1rem, env(safe-area-inset-right))
+    max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .multi-timer { margin-top: 1rem; }
+  .multi-clock { font-size: clamp(2.75rem, 14vh, 4.5rem); }
+  .multi-intro { margin-bottom: 0.75rem; }
+}

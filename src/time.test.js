@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Temporal } from "@js-temporal/polyfill";
-import { cityIds, countdown, targetInstant } from "./time.js";
+import { citiesByTimeZone, cityIds, countdown, targetInstant } from "./time.js";
 
 test("public board links preserve ordering and ignore unknown or duplicate cities", () => {
   assert.deepEqual(cityIds("tokyo,seattle,tokyo,unknown"), [
@@ -24,6 +24,14 @@ test("target conversion accounts for DST and rejects ambiguous or nonexistent ti
     () => targetInstant("2026-03-08T02:30", "America/Los_Angeles"),
     RangeError,
   );
+});
+
+test("cities sort by UTC offset with city names breaking ties", () => {
+  const date = Temporal.Instant.from("2026-11-20T00:00Z");
+  const ids = ["tokyo", "mumbai", "seattle", "los-angeles", "dubai", "london"];
+  assert.deepEqual(citiesByTimeZone(ids, date), [
+    "los-angeles", "seattle", "london", "dubai", "mumbai", "tokyo",
+  ]);
 });
 
 test("countdown uses calendar months, rounds partial minutes up, and stops at the target", () => {

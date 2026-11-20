@@ -1,24 +1,37 @@
 import { Capacitor } from "@capacitor/core";
 import "./style.css";
-import { cities, cityIds, countdown, targetInstant } from "./time.js";
+import { dashboardPath, mountDashboard } from "./dashboard.js";
+import { cities, citiesByTimeZone, cityIds, clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
 import {
   durationDisplay,
   durationMilliseconds,
   durationRemaining,
   isDurationTimer,
+  toggleDuration,
 } from "./duration.js";
 
 const app = document.querySelector("#app");
-const links = [...document.querySelectorAll("nav a")];
 const isNative = Capacitor.isNativePlatform();
-const dateLink = links.find(link => link.pathname === "/timer");
-const durationLink = links.find(link => link.pathname === "/duration");
+const countdownPath = "/countdown";
+const intervalPath = "/interval-timer-v0";
+const durationLink = document.querySelector('nav a[href="/duration"]');
+if (!__NATIVE_BUILD__ && !isNative) {
+  const link = document.createElement("a");
+  link.href = intervalPath;
+  link.dataset.route = "";
+  link.textContent = "Interval Timer";
+  durationLink.before(link);
+}
+const links = [...document.querySelectorAll("nav a")];
+const dateLink = links.find(link => link.pathname === countdownPath);
 if (isNative) {
-  dateLink.textContent = "Date countdown";
+  dateLink.textContent = "Countdown Timer";
   durationLink.hidden = false;
 }
 const params = () => new URL(location.href).searchParams;
 let redraw = () => {};
+let unmountView;
+let renderVersion = 0;
 let timerDraft;
 const timerKey = "timeandate.timer";
 const durationKey = "timeandate.duration";
@@ -38,31 +51,19 @@ function changeUrl(url, replace = false) {
   render();
 }
 
-document.querySelectorAll("[data-route]").forEach((link) =>
-  link.addEventListener("click", (event) => {
-    if (
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    )
-      return;
-    event.preventDefault();
-    const route = link.pathname;
-    if (route !== location.pathname)
-      changeUrl(route === "/clocks" && lastBoard ? lastBoard : route);
-  }),
-);
+document.addEventListener("click", event => {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey ||
+      event.ctrlKey || event.shiftKey || event.altKey) return;
+  const link = event.target.closest("a[data-route]");
+  if (!link) return;
+  event.preventDefault();
+  const route = link.pathname === "/clocks" && lastBoard
+    ? lastBoard
+    : link.pathname + link.search + link.hash;
+  if (route !== location.pathname + location.search + location.hash) changeUrl(route);
+});
 
 let lastBoard = "";
-const dateOptions = {
-  weekday: "long",
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-};
-const timeOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
 
 function setCities(ids) {
   const url = new URL("/clocks", location.origin);
@@ -73,6 +74,9 @@ function setCities(ids) {
 function renderClocks() {
   lastBoard = location.pathname + location.search;
   const ids = cityIds(params().get("cities"));
+  const alphabetical = [...ids].sort((left, right) => cities[left][0].localeCompare(cities[right][0]));
+  const byTimeZone = citiesByTimeZone(ids);
+  const matchesOrder = order => ids.every((id, index) => id === order[index]);
   app.innerHTML = `
     <section class="intro">
       <h1>World Clocks</h1>
@@ -87,6 +91,12 @@ function renderClocks() {
         .map(([id, [name]]) => `<option value="${id}">${name}</option>`)
         .join("")}</select>
       <button type="submit" ${ids.length === Object.keys(cities).length ? "disabled" : ""}>Add city</button>
+      <button class="secondary" id="sort-cities" type="button" ${ids.length < 2 ? "disabled" : ""}>
+        Sort cities ${matchesOrder(alphabetical) ? "Z–A" : "A–Z"}
+      </button>
+      <button class="secondary" id="sort-timezones" type="button" ${ids.length < 2 ? "disabled" : ""}>
+        Sort by timezone (${matchesOrder(byTimeZone) ? "highest" : "lowest"} offset first)
+      </button>
       <button class="secondary" id="share" type="button">Copy link</button>
       <span id="status" role="status"></span>
     </form>
@@ -125,17 +135,19 @@ function renderClocks() {
           ?.focus();
       };
     });
-    return {
-      card,
-      time: new Intl.DateTimeFormat("en-GB", { ...timeOptions, timeZone }),
-      date: new Intl.DateTimeFormat(undefined, { ...dateOptions, timeZone }),
-    };
+    return { card, ...clockFormatters(timeZone) };
   });
   app.querySelector("form").onsubmit = (event) => {
     event.preventDefault();
     const id = app.querySelector("#city").value;
     if (id && !ids.includes(id)) setCities([...ids, id]);
   };
+  for (const [selector, order] of [["#sort-cities", alphabetical], ["#sort-timezones", byTimeZone]]) {
+    app.querySelector(selector).onclick = () => {
+      setCities(matchesOrder(order) ? [...order].reverse() : order);
+      app.querySelector(selector).focus();
+    };
+  }
   app.querySelector("#share").onclick = async () => {
     const status = app.querySelector("#status");
     try {
@@ -176,13 +188,9 @@ function renderClocks() {
 const units = { years: "y", months: "mo", days: "d", hours: "h", minutes: "m" };
 
 function renderDateTimer(panel) {
-  const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const timeZones = [
-    ...new Set([localZone, "UTC", ...Intl.supportedValuesOf("timeZone")]),
-  ].sort();
   panel.innerHTML = `
-    <h2>Date countdown</h2>
-    <form class="timer-form card" aria-label="Date countdown">
+    <h2>Countdown Timer</h2>
+    <form class="timer-form card" aria-label="Countdown Timer">
       <div class="field"><label for="target">Target date and time</label><input id="target" type="datetime-local" step="60" required></div>
       <div class="field"><label for="timezone">Timezone</label><select id="timezone"></select></div>
       <button type="submit">Start countdown</button>
@@ -203,24 +211,18 @@ function renderDateTimer(panel) {
   const target = form.querySelector("#target");
   const error = form.querySelector("#error");
   const status = panel.querySelector("#timer-status");
-  for (const id of timeZones) zone.add(new Option(id.replaceAll("_", " "), id));
+  const localZone = fillTimeZones(zone);
   zone.value = timerDraft?.zone || localZone;
   target.value = timerDraft?.wallTime || "";
   form.onsubmit = (event) => {
     event.preventDefault();
     try {
-      const instant = targetInstant(target.value, zone.value);
-      if (!countdown(instant, zone.value))
-        throw new Error("Date already passed");
-      timerDraft = { wallTime: target.value, zone: zone.value, instant };
+      timerDraft = createDateTimer(target.value, zone.value);
       saveTimer(timerKey, timerDraft);
       error.hidden = true;
       redraw();
     } catch (issue) {
-      error.textContent =
-        issue.message === "Date already passed"
-          ? "Choose a date and time in the future."
-          : "This local time is invalid or ambiguous in the selected timezone. Choose a different time.";
+      error.textContent = issue.message;
       error.hidden = false;
     }
   };
@@ -249,14 +251,14 @@ function renderDateTimer(panel) {
         : "Time is up."
       : "Set a target to start.";
     if (status.textContent !== label) status.textContent = label;
-    return title || (timerDraft ? "Date countdown ended" : "");
+    return title || (timerDraft ? "Countdown ended" : "");
   };
 }
 
 function renderDurationTimer(panel) {
   panel.innerHTML = `
-    <h2>Duration timer</h2>
-    <form class="timer-form card" aria-label="Duration timer">
+    <h2>Duration Countdown</h2>
+    <form class="timer-form card" aria-label="Duration Countdown">
       <div class="duration-fields">
         <div class="field"><label for="duration-hours">Hours</label><input id="duration-hours" name="hours" type="number" min="0" max="999" step="1" value="0" required></div>
         <div class="field"><label for="duration-minutes">Minutes</label><input id="duration-minutes" name="minutes" type="number" min="0" max="59" step="1" value="10" required></div>
@@ -301,14 +303,7 @@ function renderDurationTimer(panel) {
     setDuration({ initial: remaining, remaining, endAt: Date.now() + remaining });
   };
   toggle.onclick = () => {
-    const now = Date.now();
-    const remaining = durationRemaining(durationTimer, now);
-    if (!remaining) return redraw();
-    setDuration({
-      ...durationTimer,
-      remaining,
-      endAt: durationTimer.endAt === null ? now + remaining : null,
-    });
+    setDuration(toggleDuration(durationTimer, Date.now()));
   };
   reset.onclick = () => setDuration(undefined);
 
@@ -329,7 +324,7 @@ function renderDurationTimer(panel) {
 function renderTimers(durationOnly) {
   const showDate = !isNative || !durationOnly;
   const showDuration = !isNative || durationOnly;
-  const heading = !isNative ? "Timer" : durationOnly ? "Duration timer" : "Date countdown";
+  const heading = !isNative ? "Countdown Timers" : durationOnly ? "Duration Countdown" : "Countdown Timer";
   app.innerHTML = `
     <section class="intro">
       <h1>${heading}</h1>
@@ -352,35 +347,82 @@ function renderTimers(durationOnly) {
 }
 
 function render() {
-  const durationOnly = location.pathname === "/duration";
-  const isTimer = location.pathname === "/timer" || durationOnly;
-  const activePath = isTimer ? (isNative && durationOnly ? "/duration" : "/timer") : "/clocks";
-  document.title = isTimer
-    ? "Timer · Time And Date"
-    : "World Clocks · Time And Date";
+  const version = ++renderVersion;
+  unmountView?.();
+  unmountView = undefined;
+  redraw = () => {};
+
+  const path = location.pathname === "/" ? dashboardPath : location.pathname;
+  const isDashboard = path === dashboardPath || path.startsWith(dashboardPath + "/");
+  const durationOnly = path === "/duration";
+  const isInterval = !__NATIVE_BUILD__ && !isNative && path === intervalPath;
+  const isCountdown = path === countdownPath || durationOnly;
+  const activePath = isDashboard ? dashboardPath : isInterval ? intervalPath
+    : isCountdown ? (isNative && durationOnly ? "/duration" : countdownPath) : "/clocks";
   for (const link of links) {
-    if (link.pathname === activePath)
-      link.setAttribute("aria-current", "page");
+    if (link.pathname === activePath) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   }
-  if (isTimer) renderTimers(durationOnly);
-  else renderClocks();
+  if (isDashboard) {
+    const open = interval => {
+      if (version !== renderVersion) return;
+      const dashboard = mountDashboard(app, {
+        path,
+        interval,
+        existingDate: () => timerDraft,
+        existingDuration: () => durationTimer,
+        countdownPath,
+        durationPath: isNative ? "/duration" : countdownPath + "#duration-panel",
+        intervalPath: !__NATIVE_BUILD__ && interval ? intervalPath : undefined,
+        navigate: changeUrl,
+      });
+      if (dashboard) {
+        redraw = dashboard.redraw;
+        unmountView = dashboard.unmount;
+      }
+    };
+    if (!__NATIVE_BUILD__ && !isNative) {
+      app.textContent = "";
+      import("./timeandate/dashboard.js").then(({ dashboardInterval }) => open(dashboardInterval))
+        .catch(() => {
+          if (version === renderVersion) app.textContent = "Could not load the dashboard. Reload to try again.";
+        });
+    } else open();
+    return;
+  }
+  if (!__NATIVE_BUILD__ && isInterval) {
+    app.textContent = "";
+    import("./timeandate/view.js").then(({ mountMultiTimer }) => {
+      if (version === renderVersion) unmountView = mountMultiTimer(app);
+    }).catch(() => {
+      if (version === renderVersion) app.textContent = "Could not load Interval Timer. Reload to try again.";
+    });
+    return;
+  }
+  if (isCountdown) {
+    renderTimers(durationOnly);
+    if (location.hash === "#duration-panel") document.querySelector("#duration-panel")?.scrollIntoView();
+  } else {
+    document.title = "World Clocks · Time And Date";
+    renderClocks();
+  }
   redraw();
 }
 
-try {
-  const saved = JSON.parse(localStorage.getItem(timerKey));
-  if (saved && targetInstant(saved.wallTime, saved.zone) === saved.instant)
-    timerDraft = saved;
-} catch {
-  // Ignore stale or unavailable device storage.
+function readTimer(key, valid, value) {
+  try {
+    const saved = JSON.parse(value === undefined ? localStorage.getItem(key) : value);
+    if (valid(saved)) return saved;
+  } catch {
+    // Ignore stale or unavailable device storage.
+  }
 }
-try {
-  const saved = JSON.parse(localStorage.getItem(durationKey));
-  if (isDurationTimer(saved)) durationTimer = saved;
-} catch {
-  // Ignore stale or unavailable device storage.
-}
+timerDraft = readTimer(timerKey, validDateTimer);
+durationTimer = readTimer(durationKey, isDurationTimer);
+window.addEventListener("storage", event => {
+  if (event.key === null || event.key === timerKey) timerDraft = readTimer(timerKey, validDateTimer, event.newValue);
+  if (event.key === null || event.key === durationKey) durationTimer = readTimer(durationKey, isDurationTimer, event.newValue);
+});
 window.addEventListener("popstate", render);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) redraw();
