@@ -346,6 +346,7 @@
   border-bottom: 1px solid var(--line);
 }
 
-.dashboard-history-list time {
+.dashboard-history-list time,
+.dashboard-history-board {
   color: var(--muted);
 }

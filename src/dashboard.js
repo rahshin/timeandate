@@ -681,6 +681,10 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
       time.textContent = date.toLocaleString();
       const title = document.createElement("strong");
       title.textContent = timerName;
+      const boardName = dashboards.boards.find(board => board.id === entry.dashboardId)?.name ?? entry.dashboardName;
+      const context = document.createElement("span");
+      context.className = "dashboard-history-board";
+      context.textContent = boardName ?? "";
       const summary = document.createElement("span");
       const outcome = entry.status === "stopped" ? "Stopped early" : "Complete";
       const parts = [outcome];
@@ -692,7 +696,9 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
         if (unattempted) parts.push(`${unattempted} unattempted`);
       }
       summary.textContent = parts.filter(Boolean).join(" · ");
-      item.append(time, title, summary);
+      item.append(time, title);
+      if (boardName) item.append(context);
+      item.append(summary);
       list.append(item);
     }
     emptyHistory.hidden = list.childElementCount > 0;
@@ -701,7 +707,8 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
 
   function onData(event) {
     const { previous, commandKey } = event.detail;
-    if (JSON.stringify(previous.dashboards) !== JSON.stringify(dashboards)) {
+    const dashboardsChanged = JSON.stringify(previous.dashboards) !== JSON.stringify(dashboards);
+    if (dashboardsChanged) {
       if (requestedBoard !== null && !dashboards.boards.some(board => board.id === requestedBoard)) {
         navigate(viewingHistory ? historyPath : dashboardPath, true);
         return;
@@ -718,7 +725,7 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
       if (structuralChange) refresh();
       else redraw(commandKey);
     }
-    if (viewingHistory && JSON.stringify(previous.history) !== JSON.stringify(localData.history)) renderHistory();
+    if (viewingHistory && (dashboardsChanged || JSON.stringify(previous.history) !== JSON.stringify(localData.history))) renderHistory();
   }
 
   function onStorage(event) {
