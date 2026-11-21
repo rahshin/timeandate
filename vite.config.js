@@ -7,9 +7,11 @@ export default defineConfig(({ mode }) => {
   return {
     define: { __NATIVE_BUILD__: JSON.stringify(native) },
     plugins: native ? [{
-      name: "dashboard-only-navigation",
+      name: "dashboard-only-header",
       transformIndexHtml(html) {
-        return html.replace(/^[ \t]*<!-- Web tools -->[\s\S]*?<!-- End web tools -->\r?\n/m, "");
+        return html
+          .replace(/^[ \t]*<nav aria-label="Apps">[\s\S]*?<\/nav>\r?\n/m, "")
+          .replace('class="shell masthead"', 'class="shell masthead masthead-native"');
       },
     }] : [],
     publicDir: native ? false : "public",
