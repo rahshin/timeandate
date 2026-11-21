@@ -9,7 +9,7 @@ on:
         options: [candidate, promote, rollback]
         required: true
       tag:
-        description: Optional for candidate and promote. Blank promote picks the highest eligible RC. Enter a stable tag for rollback.
+        description: Blank candidate auto-selects the next RC. Blank promote picks the highest eligible RC. Rollback requires a stable tag.
         type: string
       source_sha:
         description: Optional full source SHA for candidate. Blank uses main at dispatch.

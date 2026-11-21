@@ -34,16 +34,21 @@ function resolveCandidateTag(tag, sha) {
   } catch {
     throw new Error('Could not read the app version because package.json is invalid JSON. Fix it before cutting a candidate.');
   }
-  const stableTag = `v${version}`;
+  let stableTag = `v${version}`;
   if (typeof version !== 'string' || version !== version.trim() || !stablePattern.test(stableTag)) {
     throw new Error('Set package.json version to a stable numeric version such as 0.1.0, or enter an explicit RC tag.');
   }
-  const tags = execFileSync('git', ['tag', '--list', stableTag, `${stableTag}-rc.*`], { encoding: 'utf8' }).split('\n');
-  if (tags.includes(stableTag)) {
-    throw new Error(`Stable tag ${stableTag} already exists. Bump package.json version and retry, or enter an RC tag for a new version.`);
+  const tags = new Set(execFileSync('git', ['tag', '--list'], { encoding: 'utf8' }).trimEnd().split('\n'));
+  const [major, packageMinor] = version.split('.');
+  let minor = BigInt(packageMinor);
+  while (tags.has(stableTag)) {
+    minor += 1n;
+    stableTag = `v${major}.${minor}.0`;
   }
+
   let highest = 0n;
-  for (const existing of tags.filter(value => candidatePattern.test(value))) {
+  for (const existing of tags) {
+    if (!existing.startsWith(`${stableTag}-rc.`) || !candidatePattern.test(existing)) continue;
     const number = BigInt(existing.slice(`${stableTag}-rc.`.length));
     if (number > highest) highest = number;
   }

@@ -64,7 +64,7 @@ test('smoke checks explain what the deployed Worker returned', async () => {
 });
 
 
-test('automatic candidates use the pinned commit version and increment existing RC tags', t => {
+test('automatic candidates use the pinned version, advance shipped minor lines, and increment RC numbers', t => {
   const cwd = mkdtempSync(join(tmpdir(), 'timeandate-release-'));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -80,9 +80,14 @@ test('automatic candidates use the pinned commit version and increment existing 
   assert.equal(resolveTag().stdout.trim(), 'v0.1.0-rc.11');
   assert.equal(resolveTag('v1.0.0-rc.1').stdout.trim(), 'v1.0.0-rc.1');
   git('tag', 'v0.1.0');
-  const published = resolveTag();
-  assert.equal(published.status, 1);
-  assert.match(published.stderr, /Stable tag v0\.1\.0 already exists.*Bump package\.json/);
+  const nextMinor = resolveTag();
+  assert.equal(nextMinor.status, 0, nextMinor.stderr);
+  assert.equal(nextMinor.stdout.trim(), 'v0.2.0-rc.1');
+  for (const tag of ['v0.2.0-rc.2', 'v0.2.0-rc.10', 'v0.2.0-rc.99-extra']) git('tag', tag);
+  assert.equal(resolveTag().stdout.trim(), 'v0.2.0-rc.11');
+  git('tag', 'v0.2.0');
+  assert.equal(resolveTag().stdout.trim(), 'v0.3.0-rc.1');
+  assert.equal(resolveTag('v0.1.1-rc.1').stdout.trim(), 'v0.1.1-rc.1');
 });
 
 test('automatic promotion selects the highest published RC for an unshipped version', t => {
