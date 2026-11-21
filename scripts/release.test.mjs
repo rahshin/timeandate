@@ -116,7 +116,7 @@ test('release smoke checks the standalone timer paths used by the selected bundl
     /interval-timer-app\/ did not serve the expected interval timer build file/);
   for (const [timerName, countdownPath, timerPath] of [
     ['multi-timer', '/timer', '/multi-timer'],
-    ['interval-timer', '/countdown', '/interval-timer-v0'],
+    ['interval-timer', '/countdown'],
   ]) {
     const standalonePath = `/${timerName}-app`;
     const files = {
@@ -129,6 +129,6 @@ test('release smoke checks the standalone timer paths used by the selected bundl
       paths.push(url.pathname);
       return Object.hasOwn(files, url.pathname) ? new Response(files[url.pathname]) : legacy(url);
     }, { standalonePath, renamedTimerRoutes: countdownPath === '/countdown' });
-    assert.deepEqual(paths.slice(1), ['/clocks', countdownPath, timerPath, ...Object.keys(files)]);
+    assert.deepEqual(paths.slice(1), ['/clocks', countdownPath, ...(timerPath ? [timerPath] : []), ...Object.keys(files)]);
   }
 });

@@ -5,7 +5,7 @@
 | Time And Date | `npm run mobile:sync` | `io.github.rahshin.timeandate` | Local builds, GitHub Actions QA, and manual store builds |
 | Time And Date Timers Dev | `npm run timer-dev:sync` | `io.github.rahshin.timeandate.timers.dev` | Local builds and GitHub Actions debug QA alongside Time And Date |
 
-Both targets use the Dashboard timer code. The standalone Interval Timer PWA at `/interval-timer-app/` ships with the web release.
+Both native targets are Dashboard-only and offer Date Countdown, Countdown Timer, Interval Timer, and World Clock through the Dashboard picker. The standalone Interval Timer PWA at `/interval-timer-app/` ships with the web release.
 
 ## Set up and run locally
 
@@ -28,7 +28,7 @@ For the separate timer development app, run `npm run timer-dev:sync` and open `a
 
 ## Build for QA
 
-In GitHub, go to **Actions → Build mobile apps → Run workflow** and choose the branch plus the `timeandate` or `timers-dev` target. Download the Android debug APK and the iOS simulator ZIP from the completed run. Artifact names include the selected target.
+The **Build mobile apps** workflow runs on pull requests and pushes to `main` or `release/**`. Each run builds both targets and uploads four GitHub Actions artifacts. Download the Android debug APK and iOS simulator ZIP for each target from the completed run. To build one target on demand, go to **Actions → Build mobile apps → Run workflow** and select the branch and target.
 
 To produce the equivalent artifacts locally, run `npm run mobile:sync` first. For the separate timer app, run `npm run timer-dev:sync` and use the alternate project and output paths in the table below.
 

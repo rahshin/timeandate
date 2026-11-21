@@ -100,10 +100,6 @@ try {
 }
 let activeId = dashboards.defaultId;
 
-export function selectDefaultDashboard() {
-  activeId = dashboards.defaultId;
-}
-
 function saveDashboards(next) {
   dashboards = next;
   try {
@@ -154,18 +150,23 @@ export const dashboardPath = "/dashboard";
 const addPath = dashboardPath + "/add";
 const editPath = dashboardPath + "/edit/";
 
+function boardUrl(id, path = dashboardPath) {
+  return `${path}?board=${encodeURIComponent(id)}`;
+}
+
 function canEdit(definition, value, now) {
   return Boolean(definition.toggle) && !definition.describe(value, now).status.startsWith("Running");
 }
 
 function renderSetupPage(root, type, types, navigate, editKey, record, editDefinition) {
   const dashboardId = activeId;
+  const home = boardUrl(dashboardId);
   const definition = editDefinition ?? (Object.hasOwn(types, type) ? types[type] : undefined);
   const heading = record ? `Edit ${definition.name}` : definition?.name ?? "Add a timer or clock";
   document.title = `${heading} · Time And Date`;
   root.innerHTML = `
     <header class="intro dashboard-setup-heading">
-      <a href="${definition && !record ? addPath : dashboardPath}" data-route>${definition && !record ? "Choose a different type" : "Back to dashboard"}</a>
+      <a href="${definition && !record ? boardUrl(dashboardId, addPath) : home}" data-route>${definition && !record ? "Choose a different type" : "Back to dashboard"}</a>
       <h1 tabindex="-1">${heading}</h1>
       <p>${definition ? definition.description : "Choose what to add to your dashboard."}</p>
     </header>
@@ -175,14 +176,14 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
         ${definition.fields}
         <p class="dashboard-error" role="alert" hidden></p>
         <div class="dashboard-actions">
-          <a href="${dashboardPath}" data-route>Cancel</a>
+          <a href="${home}" data-route>Cancel</a>
           <button type="submit">${record ? "Save changes" : "Add"}</button>
         </div>
       </form>` : `
       <ul class="dashboard-grid dashboard-types">
         ${Object.entries(types).map(([key, timer]) => `
           <li>
-            <a class="card" href="${addPath}/${key}" data-route>
+            <a class="card" href="${boardUrl(dashboardId, addPath + "/" + key)}" data-route>
               <strong>${timer.name}</strong>
               <span>${timer.description}</span>
             </a>
@@ -196,6 +197,10 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
   definition.init?.(form.elements, record?.value);
   if (record) form.elements.timerName.value = record.name;
   form.oninput = () => { error.hidden = true; };
+  form.addEventListener("invalid", event => {
+    const advanced = event.target.closest("details");
+    if (advanced) advanced.open = true;
+  }, true);
 
   form.onsubmit = (event) => {
     event.preventDefault();
@@ -221,11 +226,16 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
     }
     const key = editKey ?? prefix + crypto.randomUUID();
     saveRecord(key, { ...record, dashboardId, type, name: form.elements.timerName.value.trim(), value, created: record?.created ?? now });
-    navigate(dashboardPath, true);
+    navigate(home, true);
   };
 }
 
-export function mountDashboard(root, { path, interval, existingDate, existingDuration, countdownPath, durationPath, intervalPath, navigate }) {
+export function mountDashboard(root, { path, requestedBoard, interval, linkedTimers, navigate }) {
+  if (requestedBoard !== null && !dashboards.boards.some(board => board.id === requestedBoard)) {
+    navigate(dashboardPath, true);
+    return;
+  }
+  activeId = requestedBoard ?? dashboards.defaultId;
   const types = { date: dateCountdown, duration: dashboardCountdown, interval: dashboardSessionInterval, clock: worldClock };
   function savedDefinition(record) {
     if (record.type === "interval" && interval && !types.interval.valid(record.value) && interval.valid(record.value)) return interval;
@@ -241,7 +251,7 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
       renderSetupPage(root, record.type, types, navigate, key, record, definition);
       return;
     }
-    navigate(dashboardPath, true);
+    navigate(boardUrl(activeId), true);
     return;
   }
 
@@ -250,7 +260,6 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
     return;
   }
 
-  document.title = "Dashboard · Time And Date";
   root.innerHTML = `
     <div class="dashboard-switcher">
       <div class="dashboard-tabs" role="group" aria-label="Choose dashboard"></div>
@@ -268,7 +277,7 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
     </dialog>
     <header class="intro dashboard-heading">
       <h1 tabindex="-1"></h1>
-      <a href="${addPath}" class="dashboard-add" aria-label="Add timer or clock" data-route>+</a>
+      <a href="${boardUrl(activeId, addPath)}" class="dashboard-add" aria-label="Add timer or clock" data-route>+</a>
     </header>
     <div class="dashboard-actions dashboard-preferences">
       <button type="button" class="secondary dashboard-default"></button>
@@ -307,10 +316,10 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
       nameInput.reportValidity();
       return;
     }
-    activeId = crypto.randomUUID();
-    saveDashboards({ ...dashboards, boards: [...dashboards.boards, { id: activeId, name }] });
+    const id = crypto.randomUUID();
+    saveDashboards({ ...dashboards, boards: [...dashboards.boards, { id, name }] });
     create.close();
-    refreshDashboard(true);
+    navigate(boardUrl(id));
   };
 
   defaultButton.onclick = () => {
@@ -335,22 +344,19 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
     if (!dashboards.boards.some(board => board.id === activeId)) activeId = dashboards.defaultId;
     const active = dashboards.boards.find(board => board.id === activeId);
     heading.textContent = active.name;
+    document.title = `${active.name} · Time And Date`;
+    add.href = boardUrl(activeId, addPath);
     updatePreferences();
     tabs.replaceChildren();
     for (const board of dashboards.boards) {
       const tab = document.createElement("div");
       tab.className = "dashboard-tab";
-      const select = document.createElement("button");
-      select.type = "button";
-      select.className = "secondary";
+      const select = document.createElement("a");
+      select.href = boardUrl(board.id);
+      select.dataset.route = "";
       select.textContent = board.name;
-      select.setAttribute("aria-pressed", String(board.id === activeId));
-      select.onclick = () => {
-        if (board.id === activeId) return;
-        activeId = board.id;
-        if (board.sound) unlockTone();
-        refreshDashboard(true);
-      };
+      if (board.id === activeId) select.setAttribute("aria-current", "page");
+      if (board.sound) select.onclick = unlockTone;
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "secondary dashboard-tab-remove";
@@ -366,13 +372,13 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
         for (const [key, record] of stored) {
           if (boardId(record) === board.id) saveRecord(key);
         }
-        if (activeId === board.id) activeId = replacement;
-        refreshDashboard(true);
+        if (activeId === board.id) navigate(boardUrl(replacement), true);
+        else refreshDashboard(true);
       };
       tab.append(select, remove);
       tabs.append(tab);
     }
-    const selected = tabs.querySelector('[aria-pressed="true"]');
+    const selected = tabs.querySelector('[aria-current="page"]');
     selected.scrollIntoView({ block: "nearest", inline: "nearest" });
     if (focusTab) selected.focus({ preventScroll: true });
     refresh();
@@ -461,7 +467,7 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
           commandButtons.push([action, button]);
         }
         edit = document.createElement("a");
-        edit.href = editPath + key.slice(prefix.length);
+        edit.href = boardUrl(activeId, editPath + key.slice(prefix.length));
         edit.dataset.route = "";
         edit.textContent = "Edit";
         edit.setAttribute("aria-label", `Edit ${label}`);
@@ -545,11 +551,7 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
     grid.replaceChildren();
     // Standalone timers have their own routes and storage, independent of dashboard cards.
     const linkedBoard = dashboards.boards.find(board => board.id === originalId) ?? dashboards.boards[0];
-    const existing = activeId === linkedBoard.id ? [
-      ["date", existingDate(), countdownPath],
-      ["duration", existingDuration(), durationPath],
-      ["interval", interval?.existing(), intervalPath],
-    ] : [];
+    const existing = activeId === linkedBoard.id ? linkedTimers?.() ?? [] : [];
     for (const [timerType, value, path] of existing) {
       if (value) addCard(timerType, { type: timerType, value }, path, timerType === "interval" ? interval : types[timerType]);
     }
@@ -564,7 +566,11 @@ export function mountDashboard(root, { path, interval, existingDate, existingDur
   }
 
   function onStorage(event) {
-    if (event.key === null || event.key === dashboardsKey) refreshDashboard();
+    if (event.key === null || event.key === dashboardsKey) {
+      if (requestedBoard !== null && !dashboards.boards.some(board => board.id === requestedBoard)) {
+        navigate(dashboardPath, true);
+      } else refreshDashboard();
+    }
     else if (event.key.startsWith("timeandate.")) refresh();
   }
 

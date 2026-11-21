@@ -28,3 +28,34 @@ test("existing interval cards keep their paused rest and completed repetition co
   assert.equal(next.pauseMs, 8000);
   assert.equal(next.endAt, 110_000);
 });
+
+test("final-seconds settings survive session commands and reopen for editing", () => {
+  const form = {
+    repetitions: { valueAsNumber: 3 },
+    durationMinutes: { valueAsNumber: 0 },
+    durationSeconds: { valueAsNumber: 10 },
+    restMinutes: { valueAsNumber: 0 },
+    restSeconds: { valueAsNumber: 0 },
+    preparation: { checked: true },
+    finalSecondsEnabled: { checked: true },
+    finalSeconds: { valueAsNumber: 7 },
+  };
+  const ready = dashboardSessionInterval.create(form);
+  const started = dashboardSessionInterval.command(ready, "start", 1000);
+  const saved = JSON.parse(JSON.stringify(started));
+  assert.equal(saved.phase, "preparation");
+  assert.equal(dashboardSessionInterval.valid(saved), true);
+  dashboardSessionInterval.init(form, saved);
+  assert.equal(form.finalSecondsEnabled.checked, true);
+  assert.equal(form.finalSeconds.value, 7);
+
+  delete saved.config.finalSecondsEnabled;
+  delete saved.config.finalSeconds;
+  assert.equal(dashboardSessionInterval.valid(saved), true);
+  dashboardSessionInterval.init(form, saved);
+  assert.equal(form.finalSecondsEnabled.checked, false);
+  assert.equal(form.finalSeconds.value, 10);
+
+  form.finalSeconds.valueAsNumber = 0;
+  assert.throws(() => dashboardSessionInterval.create(form), RangeError);
+});

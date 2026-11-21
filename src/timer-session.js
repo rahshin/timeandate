@@ -2,14 +2,27 @@ import { pauseTimer, remainingTime, startTimer } from "./timeandate/timer.js";
 
 export { remainingTime as sessionRemaining };
 
-export function createTimerSession({ durationMs, repetitions = 1, restMs = 2000, preparation = false, kind = "countdown" }) {
+export const DEFAULT_FINAL_SECONDS = 10;
+export const MAX_FINAL_SECONDS = 999 * 60 + 59;
+
+export function createTimerSession({
+  durationMs, repetitions = 1, restMs = 2000, preparation = false,
+  finalSecondsEnabled = false, finalSeconds = DEFAULT_FINAL_SECONDS, kind = "countdown",
+}) {
   if (!Number.isSafeInteger(durationMs) || durationMs <= 0 ||
       !Number.isSafeInteger(repetitions) || repetitions <= 0 ||
       !Number.isSafeInteger(restMs) || restMs < 0) {
     throw new RangeError("Enter a positive duration and repetition count, and a valid rest duration.");
   }
+  if (kind === "interval" &&
+      (!Number.isInteger(finalSeconds) || finalSeconds < 1 || finalSeconds > MAX_FINAL_SECONDS)) {
+    throw new RangeError("Enter a final-seconds window within the allowed range.");
+  }
   const config = kind === "interval"
-    ? { kind, durationMs, repetitions, restMs, preparationMs: preparation ? 3000 : 0 }
+    ? {
+      kind, durationMs, repetitions, restMs, preparationMs: preparation ? 3000 : 0,
+      finalSecondsEnabled, finalSeconds,
+    }
     : { kind: "countdown", durationMs, repetitions: 1, restMs: 0, preparationMs: 0 };
   return ready(config);
 }

@@ -51,8 +51,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
-      - run: sdkmanager 'platforms;android-36'
+      # The Ubuntu 24.04 runner includes Android SDK Platform 36.
       - run: npm ci
       - run: npm run mobile:sync -- android
       - run: ./gradlew :app:bundleRelease

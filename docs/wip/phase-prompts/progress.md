@@ -92,3 +92,66 @@ Artifacts:
 Local automation commands for this run were `node /tmp/timeandate-timer-sessions-smoke.mjs`, `node /tmp/timeandate-legacy-interval-settings-smoke.mjs`, and `node /tmp/timeandate-android-session-smoke.mjs` (with the Android debug WebView forwarded to port 4923 using ADB). The shell and Swift harnesses for the iOS run are in `/tmp/timeandate-phase-ios-build.sh` and `/tmp/timeandate-ios-smoke-extension.swift`.
 
 The host could boot the iOS simulator through `simctl` but could not open a Simulator GUI. Manual iOS touch interaction remains unverified. The countdown and Dashboard checks ran in the iOS simulator, and the clean app was relaunched and inspected after the harness was removed.
+
+## Phase 2 Dashboard integration · 2026-11-20
+
+Local branch `feat/dashboard-timer-integration` starts at `7b8f6ff`, the updated `origin/main` after PR #3 merged.
+
+- Interval Timer **Advanced** now saves **Final-seconds countdown** and its window through creation and editing. The toggle defaults off and the window defaults to 10 seconds. The window accepts 1–59,999 whole seconds, up to the maximum repetition duration. A saved window is retained when the toggle is off. Existing cards without these fields open with the defaults. Foreground speech and screen wake are Phase 4 work.
+- Retained the existing limits and defaults where the handoff left them open. Interval Timer defaults to 0:10 activity, 3 repetitions and 0:02 rest. Activity is 0:01–999:59, rest is 0:00–999:59, and repetitions are 1–999. Preparation defaults off and uses 3 seconds when enabled. Countdown Timer defaults to 00:10:00 and accepts 00:00:01–999:59:59.
+- Chrome, Android WebView and iOS WKWebView verified named dashboard creation and switching, saving a default, adding all four item types on the selected board, ready states, card editing, mute, timer controls and narrow viewport layout. Chrome also verified Enter and Tab navigation, legacy route loading, older saved cards, and offline reload of the standalone Interval Timer PWA. Android UI Automator exposed the picker label and an injected emulator touch opened the picker. On iOS, WebView automation verified the labels and layout. Manual Simulator touch and screen-reader interaction remain unverified.
+- Mobile CI now builds both app targets on pull requests and pushes to `main` or `release/**`, publishing two debug APKs and two simulator ZIPs as GitHub Actions artifacts. Manual dispatch still builds the selected target. The signed workflow remains available on demand. GitHub-hosted execution and upload are pending a remote run. The branch remains local.
+
+### Verification commands
+
+Run from the repository root. The smoke scripts and logs under `/tmp` are local session files.
+
+```sh
+npm test
+npm run build
+npm run timer-dev:sync
+npm run mobile:sync
+/tmp/primora-actionlint -color
+node /tmp/timeandate-phase2-web.mjs
+
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+(cd artifacts/timer-dev/android && sh ./gradlew --offline :app:assembleDebug)
+(cd android && sh ./gradlew --offline :app:assembleDebug)
+adb="$ANDROID_HOME/platform-tools/adb"
+app_id=io.github.rahshin.timeandate.timers.dev
+"$adb" install -r artifacts/timer-dev/android/app/build/outputs/apk/debug/app-debug.apk
+"$adb" shell am force-stop "$app_id"
+"$adb" shell am start -n "$app_id/io.github.rahshin.timeandate.MainActivity"
+"$adb" forward tcp:4923 "localabstract:webview_devtools_remote_$("$adb" shell pidof "$app_id" | tr -d '\r')"
+node /tmp/timeandate-phase2-android.mjs
+
+sh /tmp/timeandate-phase2-ios.sh smoke
+xcodebuild -project ios/App/App.xcodeproj -scheme App -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' -configuration Debug \
+  -derivedDataPath artifacts/phase2-existing-ios \
+  -clonedSourcePackagesDirPath /private/tmp/timeandate-ios-build/SourcePackages \
+  -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO build
+```
+
+All 34 tests passed. The iOS smoke runner restores the generated project and rebuilds the normal app after testing. Local build artifacts:
+
+| Target | Artifact |
+| --- | --- |
+| Web and standalone PWA | `dist/`, including `dist/interval-timer-app/` |
+| Timers Dev Android | `artifacts/timer-dev/android/app/build/outputs/apk/debug/app-debug.apk` |
+| Timers Dev iOS | `artifacts/phase2/timers-dev-ios-simulator.zip` |
+| Existing Capacitor Android | `android/app/build/outputs/apk/debug/app-debug.apk` |
+| Existing Capacitor iOS | `artifacts/phase2/timeandate-ios-simulator.zip` |
+
+### Bookmarkable dashboards
+
+Each dashboard name is a link to `/dashboard?board=<id>`. Open it in a new tab or window, or bookmark it using the browser. The ID resolves against dashboards saved in the current browser profile. `/dashboard` still opens the default. A missing or deleted ID falls back to the default. Add, edit, and cancel routes keep the selected board.
+
+Verified with `npm test` (34 passed), `npm run build`, `npm run mobile:build`, `npm run timer-dev:sync`, and `node /tmp/timeandate-dashboard-bookmarks.mjs`. The Chrome preview check covered two tabs with distinct boards, default changes, card placement, add and edit navigation, reload, browser Back, and fallback for an unknown board ID.
+
+### Dashboard-only mobile apps
+
+Both native targets now expose only Dashboard and its four picker items. Native links to old standalone tool paths return to Dashboard. On the web, `/interval-timer-v0` opens the standalone PWA at `/interval-timer-app/`, which uses the existing saved timer data. The web World Clocks and Countdown Timers pages remain available.
+
+Verified with all 34 tests, `npm run build`, `npm run mobile:sync`, `npm run timer-dev:sync`, and `node /tmp/timeandate-dashboard-only.mjs`. The preview check covered native routing and the four picker entries, the web redirect and saved timer link, and offline PWA reload.

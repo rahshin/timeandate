@@ -29,6 +29,10 @@ body {
   border-bottom: 1px solid var(--line);
   padding-top: env(safe-area-inset-top);
 }
+.masthead.masthead-native {
+  min-height: calc(3rem + env(safe-area-inset-top));
+  padding-block: calc(0.5rem + env(safe-area-inset-top)) 0.5rem;
+}
 .brand {
   display: inline-flex;
   align-items: center;
@@ -261,10 +265,6 @@ button:hover:not(:disabled) {
 
 .timer-panels h2 {
   margin: 0 0 0.75rem;
-}
-
-.native-timer h2 {
-  display: none;
 }
 
 .duration-fields {
