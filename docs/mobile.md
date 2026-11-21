@@ -28,7 +28,7 @@ For the separate timer development app, run `npm run timer-dev:sync` and open `a
 
 ## Build for QA
 
-In GitHub, go to **Actions → Build mobile apps → Run workflow** and choose the branch plus the `timeandate` or `timers-dev` target. Download the Android debug APK and the iOS simulator ZIP from the completed run. Artifact names include the selected target.
+The **Build mobile apps** workflow runs on pull requests and pushes to `main` or `release/**`. Each run builds both targets and uploads four GitHub Actions artifacts. Download the Android debug APK and iOS simulator ZIP for each target from the completed run. To build one target on demand, go to **Actions → Build mobile apps → Run workflow** and select the branch and target.
 
 To produce the equivalent artifacts locally, run `npm run mobile:sync` first. For the separate timer app, run `npm run timer-dev:sync` and use the alternate project and output paths in the table below.
 

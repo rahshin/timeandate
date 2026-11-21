@@ -1,7 +1,10 @@
 import { durationDisplay, durationMilliseconds, isDurationTimer } from "./duration.js";
 import { validIntervalSettings } from "./timeandate/settings.js";
 import { restoreTimer, STORAGE_VERSION } from "./timeandate/timer.js";
-import { advanceSession, createTimerSession, sessionActions, sessionRemaining, updateSession } from "./timer-session.js";
+import {
+  advanceSession, createTimerSession, DEFAULT_FINAL_SECONDS, MAX_FINAL_SECONDS,
+  sessionActions, sessionRemaining, updateSession,
+} from "./timer-session.js";
 
 const statuses = { idle: "Ready", running: "Running", paused: "Paused", complete: "Complete", stopped: "Stopped early" };
 const phases = { activity: "Repetition", break: "Rest after repetition", preparation: "Prepare for repetition" };
@@ -25,6 +28,9 @@ function validSession(value, kind) {
       config.restMs > 999 * 60_000 + 59_000 ||
       !Number.isInteger(config.repetitions) || config.repetitions < 1 || config.repetitions > 999 ||
       ![0, 3000].includes(config.preparationMs) ||
+      (config.finalSecondsEnabled !== undefined && typeof config.finalSecondsEnabled !== "boolean") ||
+      (config.finalSeconds !== undefined && (!Number.isInteger(config.finalSeconds) ||
+        config.finalSeconds < 1 || config.finalSeconds > MAX_FINAL_SECONDS)) ||
       !Object.hasOwn(statuses, value.status) || !Object.hasOwn(phases, value.phase) ||
       !Number.isInteger(value.cycle) || value.cycle < 1 || value.cycle > config.repetitions ||
       !Number.isFinite(value.remainingMs) || value.remainingMs < 0 ||
@@ -136,14 +142,21 @@ export const dashboardSessionInterval = configureSession({
     ${timeFields("duration", "Repetition duration", 0, 10)}
     <label class="field">Repetitions <input name="repetitions" type="number" min="1" max="999" value="3" required></label>
     ${timeFields("rest", "Rest duration", 0, 2)}
-    <details><summary>Advanced</summary>
+    <details class="dashboard-advanced"><summary>Advanced</summary>
       <label class="dashboard-checkbox"><input name="preparation" type="checkbox"> 3-second preparation</label>
+      <label class="dashboard-checkbox"><input name="finalSecondsEnabled" type="checkbox"> Final-seconds countdown</label>
+      <label class="field">Final-seconds window (seconds)
+        <input name="finalSeconds" type="number" min="1" max="${MAX_FINAL_SECONDS}" value="${DEFAULT_FINAL_SECONDS}" required>
+      </label>
+      <p class="dashboard-advanced-hint">Spoken cues will be available in a later update.</p>
     </details>`,
   init(fields, value) {
     if (!value) return;
     const { config } = normalizeInterval(value, Date.now());
     fields.repetitions.value = config.repetitions;
     fields.preparation.checked = Boolean(config.preparationMs);
+    fields.finalSecondsEnabled.checked = config.finalSecondsEnabled ?? false;
+    fields.finalSeconds.value = config.finalSeconds ?? DEFAULT_FINAL_SECONDS;
     for (const [prefix, ms] of [["duration", config.durationMs], ["rest", config.restMs]]) {
       fields[prefix + "Minutes"].value = Math.floor(ms / 60_000);
       fields[prefix + "Seconds"].value = Math.floor(ms / 1000) % 60;
@@ -155,6 +168,7 @@ export const dashboardSessionInterval = configureSession({
     return createTimerSession({
       kind: "interval", durationMs: milliseconds("duration"), restMs: milliseconds("rest"),
       repetitions: fields.repetitions.valueAsNumber, preparation: fields.preparation.checked,
+      finalSecondsEnabled: fields.finalSecondsEnabled.checked, finalSeconds: fields.finalSeconds.valueAsNumber,
     });
   },
   valid: value => validSession(value, "interval") || Boolean(legacyIntervalTimer(value)),

@@ -1,6 +1,9 @@
 name: Build mobile apps
 
 on:
+  pull_request:
+  push:
+    branches: [main, 'release/**']
   workflow_dispatch:
     inputs:
       target:
@@ -13,11 +16,14 @@ on:
 permissions:
   contents: read
 
-env:
-  NATIVE_ROOT: ${{ inputs.target == 'timers-dev' && 'artifacts/timer-dev' || '.' }}
-
 jobs:
   android:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.target)) || fromJSON('["timeandate", "timers-dev"]') }}
+    env:
+      NATIVE_ROOT: ${{ matrix.target == 'timers-dev' && 'artifacts/timer-dev' || '.' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -35,18 +41,24 @@ jobs:
       - run: sdkmanager 'platforms;android-36'
       - run: npm ci
       - run: npm test
-      - if: inputs.target == 'timeandate'
+      - if: matrix.target == 'timeandate'
         run: npm run mobile:sync -- android
-      - if: inputs.target == 'timers-dev'
+      - if: matrix.target == 'timers-dev'
         run: npm run timer-dev:sync
-      - run: ./gradlew assembleDebug
+      - run: sh ./gradlew :app:assembleDebug
         working-directory: ${{ env.NATIVE_ROOT }}/android
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.target }}-android-debug
+          name: ${{ matrix.target }}-android-debug
           path: ${{ env.NATIVE_ROOT }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   ios:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.target)) || fromJSON('["timeandate", "timers-dev"]') }}
+    env:
+      NATIVE_ROOT: ${{ matrix.target == 'timers-dev' && 'artifacts/timer-dev' || '.' }}
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
@@ -58,9 +70,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - if: inputs.target == 'timeandate'
+      - if: matrix.target == 'timeandate'
         run: npm run mobile:sync -- ios
-      - if: inputs.target == 'timers-dev'
+      - if: matrix.target == 'timers-dev'
         run: npm run timer-dev:sync
       - name: Build for iOS Simulator
         run: |
@@ -69,6 +81,6 @@ jobs:
           ditto -c -k --keepParent ios-build/Build/Products/Debug-iphonesimulator/App.app timeandate-ios-simulator.zip
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.target }}-ios-simulator
+          name: ${{ matrix.target }}-ios-simulator
           path: timeandate-ios-simulator.zip
           if-no-files-found: error

@@ -164,7 +164,16 @@
   flex: 0 0 auto;
 }
 
-.dashboard-tab button:first-child {
+.dashboard-tab a {
+  display: block;
+  align-content: center;
+  min-height: 2.7rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  background: #212a3e;
+  color: #eff4fe;
+  font-weight: 700;
   max-width: min(16rem, 52vw);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -178,7 +187,7 @@
   border-end-start-radius: 0;
 }
 
-.dashboard-tab button[aria-pressed="true"] {
+.dashboard-tab a[aria-current="page"] {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -259,4 +268,19 @@
 
 .dashboard-timer-fields {
   min-width: 0;
+}
+
+.dashboard-advanced > summary,
+.dashboard-advanced .dashboard-checkbox {
+  min-height: 2.75rem;
+  align-content: center;
+}
+
+.dashboard-advanced > summary {
+  cursor: pointer;
+}
+
+.dashboard-advanced-hint {
+  color: var(--muted);
+  margin: 0.5rem 0 0;
 }

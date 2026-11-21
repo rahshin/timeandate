@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import "./style.css";
-import { dashboardPath, mountDashboard, selectDefaultDashboard } from "./dashboard.js";
+import { dashboardPath, mountDashboard } from "./dashboard.js";
 import { cities, citiesByTimeZone, cityIds, clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
 import {
   durationDisplay,
@@ -32,7 +32,6 @@ const params = () => new URL(location.href).searchParams;
 let redraw = () => {};
 let unmountView;
 let renderVersion = 0;
-let dashboardOpen = false;
 let timerDraft;
 const timerKey = "timeandate.timer";
 const durationKey = "timeandate.duration";
@@ -355,8 +354,6 @@ function render() {
 
   const path = location.pathname === "/" ? dashboardPath : location.pathname;
   const isDashboard = path === dashboardPath || path.startsWith(dashboardPath + "/");
-  if (isDashboard && !dashboardOpen) selectDefaultDashboard();
-  dashboardOpen = isDashboard;
   const durationOnly = path === "/duration";
   const isInterval = !__NATIVE_BUILD__ && !isNative && path === intervalPath;
   const isCountdown = path === countdownPath || durationOnly;
@@ -371,6 +368,7 @@ function render() {
       if (version !== renderVersion) return;
       const dashboard = mountDashboard(app, {
         path,
+        requestedBoard: new URLSearchParams(location.search).get("board"),
         interval,
         existingDate: () => timerDraft,
         existingDuration: () => durationTimer,
