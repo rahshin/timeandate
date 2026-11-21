@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  cardPrefix, checkpointSessions, commandSession, migrateDashboardData, presetSession, savePreset,
+  cardPrefix, checkpointSessions, commandSession, migrateDashboardData, unfinishedCards, presetSession, savePreset,
 } from "./dashboard-data.js";
 import { createTimerSession } from "./timer-session.js";
 
@@ -164,4 +164,38 @@ test("a Phase 2 running interval keeps its settings and saved phase when migrati
   assert.equal(session.cycle, 2);
   assert.equal(session.completed, 1);
   assert.equal(data.history.length, 0);
+});
+
+test("only a cold-interrupted running timer gets recovery provenance", () => {
+  const data = empty();
+  add(data, "running", { durationMs: 20000 });
+  add(data, "manual", { durationMs: 20000 });
+  command(data, "running", "start", 1000);
+  command(data, "manual", "start", 1000);
+  command(data, "manual", "pause", 1500);
+  checkpointSessions(data, 7000);
+  assert.equal(data.cards.running.value.recovered, undefined);
+  checkpointSessions(data, 40000, { cold: true });
+  assert.equal(data.cards.running.value.recovered, true);
+  assert.equal(data.cards.running.value.remainingMs, 14000);
+  assert.equal(data.cards.manual.value.recovered, undefined);
+  checkpointSessions(data, 50000, { cold: true });
+  assert.equal(data.cards.running.value.recovered, true);
+  command(data, "running", "resume", 51000);
+  assert.equal(data.cards.running.value.recovered, undefined);
+});
+
+test("removal checks fresh unfinished sessions and allows a deadline-ended card", () => {
+  const data = empty();
+  add(data, "countdown", { durationMs: 3000 });
+  add(data, "interval", { kind: "interval", durationMs: 3000, repetitions: 2 });
+  assert.deepEqual(unfinishedCards(data, ["countdown", "interval"], 1000), []);
+  command(data, "countdown", "start", 1000);
+  command(data, "interval", "start", 1000);
+  command(data, "interval", "pause", 2000);
+  assert.deepEqual(unfinishedCards(data, ["countdown", "interval"], 3000), ["countdown", "interval"]);
+  assert.deepEqual(unfinishedCards(data, ["countdown", "interval"], 4000), ["interval"]);
+  checkpointSessions(data, 4000);
+  assert.equal(data.history.length, 1);
+  assert.equal(data.history[0].status, "complete");
 });

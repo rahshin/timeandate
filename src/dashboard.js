@@ -6,7 +6,7 @@ import { clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTi
 import { durationDisplay } from "./duration.js";
 import {
   cardPrefix as prefix, checkpointSessions, commandSession, dataKey, openDashboardData, originalId,
-  presetSession, savePreset, sessionDefinition,
+  presetSession, savePreset, sessionDefinition, unfinishedCards,
 } from "./dashboard-data.js";
 
 const dateCountdown = {
@@ -90,6 +90,15 @@ const repository = openDashboardData((next, previous, commandKey) => {
 
 export const dashboardReady = repository.ready;
 
+const persistenceNotice = '<p class="dashboard-persistence" role="status" hidden></p>';
+
+function showPersistenceStatus(root) {
+  const notice = root.querySelector(".dashboard-persistence");
+  if (!repository.isVolatile() || !notice.hidden) return;
+  notice.hidden = false;
+  notice.textContent = "Changes aren’t being saved. You can keep using timers here, but changes may be lost if you reload or close the app.";
+}
+
 function boardId(record) {
   return record.dashboardId ?? originalId;
 }
@@ -123,6 +132,7 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
       <h1 tabindex="-1">${heading}</h1>
       <p>${definition ? definition.description : "Choose what to add to your dashboard."}</p>
     </header>
+    ${persistenceNotice}
     ${definition ? `
       <form class="card dashboard-form">
         ${supportsPresets ? `<label class="field">Preset <select name="preset"></select></label>` : ""}
@@ -150,7 +160,11 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
       </ul>`}`;
 
   root.querySelector("h1").focus();
-  if (!definition) return;
+  const showPersistence = () => showPersistenceStatus(root);
+  const unmount = () => window.removeEventListener("dashboarddata", showPersistence);
+  showPersistence();
+  window.addEventListener("dashboarddata", showPersistence);
+  if (!definition) return { redraw() {}, unmount };
   const form = root.querySelector("form");
   const error = form.querySelector(".dashboard-error");
   definition.init?.(form.elements, record?.value);
@@ -254,7 +268,10 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
     if (saved && form.isConnected) navigate(home, true);
     else error.hidden = false;
   };
-  return { redraw() {}, unmount: () => window.removeEventListener("dashboarddata", refreshPresets) };
+  return { redraw() {}, unmount() {
+    unmount();
+    window.removeEventListener("dashboarddata", refreshPresets);
+  } };
 }
 
 export function mountDashboard(root, { path, requestedBoard, interval, linkedTimers, navigate }) {
@@ -309,6 +326,17 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
         <a href="${boardUrl(activeId, addPath)}" class="dashboard-add" aria-label="Add timer or clock" data-route>+</a>
       </div>
     </header>
+    ${persistenceNotice}
+    <dialog class="dashboard-create dashboard-removal-block" aria-labelledby="dashboard-removal-title">
+      <div class="dashboard-form">
+        <h2 id="dashboard-removal-title">Unfinished timers</h2>
+        <p></p>
+        <div class="dashboard-actions">
+          <a data-route>View dashboard</a>
+          <button type="button" class="secondary">Close</button>
+        </div>
+      </div>
+    </dialog>
     <section class="dashboard-board-view" ${viewingHistory ? "hidden" : ""}>
     <div class="dashboard-actions dashboard-preferences">
       <button type="button" class="secondary dashboard-default"></button>
@@ -319,6 +347,7 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
     <section class="dashboard-grid" aria-label="Saved timers and clocks"></section>
     </section>
     <section class="dashboard-history" aria-label="Timer history" ${viewingHistory ? "" : "hidden"}>
+      <p class="dashboard-history-scope">Completed and stopped Countdown and Interval Timer runs from all dashboards in this app.</p>
       <label class="field dashboard-history-filter">Filter by timer name <input type="search"></label>
       <p class="dashboard-history-empty">No ended timer sessions yet.</p>
       <ul class="dashboard-history-list"></ul>
@@ -343,6 +372,23 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
   const createForm = create.querySelector("form");
   const nameInput = createForm.elements.name;
   let wasVisible = false;
+
+  const removalBlock = root.querySelector(".dashboard-removal-block");
+  const owningBoardLink = removalBlock.querySelector("a");
+  removalBlock.querySelector("button").onclick = () => removalBlock.close();
+  function showRemovalBlock(board, keys, removingBoard) {
+    const names = keys.map(key => {
+      const record = stored.get(key);
+      return record?.name || sessionDefinition(record?.type)?.name;
+    }).filter(Boolean);
+    const guidance = removingBoard
+      ? "Stop the unfinished timers before removing this dashboard."
+      : "Stop this timer before removing it.";
+    removalBlock.querySelector("p").textContent = names.length ? `${guidance} ${names.join(", ")}.` : guidance;
+    owningBoardLink.hidden = !viewingHistory && board === activeId;
+    owningBoardLink.href = boardUrl(board);
+    if (removalBlock.isConnected && !removalBlock.open) removalBlock.showModal();
+  }
 
   let renamingId;
   function openDashboardDialog(board) {
@@ -435,22 +481,34 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
       remove.setAttribute("aria-label", `Remove dashboard ${board.name}`);
       remove.disabled = dashboards.boards.length === 1;
       remove.onclick = async () => {
-        if (!window.confirm(`Remove “${board.name}” and its saved timers and clocks?`)) return;
+        const boardCards = data => Object.keys(data.cards).filter(key => boardId(data.cards[key]) === board.id);
+        let blocked = unfinishedCards(localData, boardCards(localData), Date.now());
+        if (blocked.length) {
+          showRemovalBlock(board.id, blocked, true);
+          return;
+        }
+        if (!window.confirm(`Remove “${board.name}” and its timers and clocks? Past runs stay in History.`)) return;
         const wasActive = activeId === board.id;
         let replacement;
         const removed = await repository.change(data => {
           const boards = data.dashboards.boards;
           const index = boards.findIndex(item => item.id === board.id);
           if (index < 0 || boards.length === 1) return false;
-          checkpointSessions(data, Date.now());
+          const now = Date.now();
+          const keys = boardCards(data);
+          blocked = unfinishedCards(data, keys, now);
+          if (blocked.length) return false;
+          checkpointSessions(data, now);
+          for (const entry of data.history) {
+            if (entry.dashboardId === board.id) entry.dashboardName = boards[index].name;
+          }
           boards.splice(index, 1);
           replacement = boards[Math.min(index, boards.length - 1)].id;
           if (data.dashboards.defaultId === board.id) data.dashboards.defaultId = replacement;
-          for (const [key, record] of Object.entries(data.cards)) {
-            if (boardId(record) === board.id) delete data.cards[key];
-          }
+          for (const key of keys) delete data.cards[key];
           return true;
         });
+        if (blocked.length) showRemovalBlock(board.id, blocked, true);
         if (removed && root.contains(heading)) {
           if (wasActive) navigate(boardUrl(replacement, viewingHistory ? historyPath : dashboardPath), true);
           else refreshDashboard(true);
@@ -574,14 +632,25 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
       remove.setAttribute("aria-label", `Remove ${label}`);
       remove.title = `Remove ${label}`;
       remove.onclick = async () => {
-        if (!window.confirm(`Remove “${label}”?`)) return;
-        await repository.change(data => {
+        const id = boardId(record);
+        let blocked = unfinishedCards(localData, [key], Date.now());
+        if (blocked.length) {
+          showRemovalBlock(id, blocked, false);
+          return;
+        }
+        const historyNote = sessionDefinition(record.type) ? " Past runs stay in History." : "";
+        if (!window.confirm(`Remove “${label}”?${historyNote}`)) return;
+        const removed = await repository.change(data => {
           if (!data.cards[key]) return false;
-          checkpointSessions(data, Date.now());
+          const now = Date.now();
+          blocked = unfinishedCards(data, [key], now);
+          if (blocked.length) return false;
+          checkpointSessions(data, now);
           delete data.cards[key];
           return true;
         });
-        add.focus();
+        if (blocked.length) showRemovalBlock(id, blocked, false);
+        if (removed) add.focus();
       };
     }
 
@@ -610,7 +679,9 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
       const description = record.name ? `${definition.name} · ${view.detail}` : view.detail;
       if (detail.textContent !== description) detail.textContent = description;
       if (clock.textContent !== view.display) clock.textContent = view.display;
-      if (status.textContent !== view.status) status.textContent = view.status;
+      const statusText = current.value.recovered && view.status.startsWith("Paused")
+        ? view.status.replace("Paused", "Restored paused") : view.status;
+      if (status.textContent !== statusText) status.textContent = statusText;
       const running = view.status.startsWith("Running");
       card.dataset.running = String(running);
       if (toggle) {
@@ -702,11 +773,12 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
       list.append(item);
     }
     emptyHistory.hidden = list.childElementCount > 0;
-    emptyHistory.textContent = query ? "No sessions match this timer name." : "No ended timer sessions yet.";
+    emptyHistory.textContent = query ? "No sessions match this timer name." : "No completed or stopped runs yet.";
   }
 
   function onData(event) {
     const { previous, commandKey } = event.detail;
+    showPersistenceStatus(root);
     const dashboardsChanged = JSON.stringify(previous.dashboards) !== JSON.stringify(dashboards);
     if (dashboardsChanged) {
       if (requestedBoard !== null && !dashboards.boards.some(board => board.id === requestedBoard)) {
@@ -748,6 +820,7 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
   document.addEventListener("visibilitychange", resetAnnouncements, true);
   refreshDashboard();
   renderHistory();
+  showPersistenceStatus(root);
   heading.focus({ preventScroll: true });
   return {
     redraw,
