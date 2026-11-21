@@ -161,6 +161,62 @@ jobs:
           path: artifacts/
           if-no-files-found: error
 
+  android:
+    if: inputs.operation != 'rollback'
+    needs: plan
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify and reuse candidate APKs
+        id: candidate-apks
+        if: inputs.operation == 'promote'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          files=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')
+          if grep -Eq '\.apk$|^APK-SHA256SUMS$' <<< "$files"; then
+            gh release download "$TAG" --repo "$REPO" --dir android-assets --pattern '*.apk' --pattern APK-SHA256SUMS
+            (cd android-assets && sha256sum ./*.apk | cmp - APK-SHA256SUMS)
+            test -s android-assets/timeandate-android-debug.apk
+            echo 'reused=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.candidate-apks.outputs.reused != 'true'
+        with:
+          ref: ${{ needs.plan.outputs.source }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        if: steps.candidate-apks.outputs.reused != 'true'
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v5
+        if: steps.candidate-apks.outputs.reused != 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Build APKs from the selected release commit
+        if: steps.candidate-apks.outputs.reused != 'true'
+        run: |
+          npm ci
+          npm run mobile:sync -- android
+          (cd android && sh ./gradlew :app:assembleDebug)
+          mkdir android-assets
+          cp android/app/build/outputs/apk/debug/app-debug.apk android-assets/timeandate-android-debug.apk
+
+          if node -e 'process.exit(require("./package.json").scripts["timer-dev:sync"] ? 0 : 1)'; then
+            npm run timer-dev:sync
+            (cd artifacts/timer-dev/android && sh ./gradlew :app:assembleDebug)
+            cp artifacts/timer-dev/android/app/build/outputs/apk/debug/app-debug.apk android-assets/timers-dev-android-debug.apk
+          fi
+          (cd android-assets && sha256sum ./*.apk > APK-SHA256SUMS)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-apks
+          path: android-assets/
+          if-no-files-found: error
+
   qa:
     if: inputs.operation == 'candidate'
     needs: [plan, build]
@@ -205,7 +261,7 @@ jobs:
 
   publish-candidate:
     if: inputs.operation == 'candidate'
-    needs: [plan, qa]
+    needs: [plan, qa, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -214,7 +270,11 @@ jobs:
         with:
           name: verified-bundle
           path: artifacts
-      - name: Publish QA-verified candidate
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-apks
+          path: android-assets
+      - name: Publish QA-verified candidate and APKs
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -225,15 +285,16 @@ jobs:
             echo 'Could not verify the release bundle. Check the checksum output above and use the original bundle.tar.gz and its matching SHA256SUMS.' >&2
             exit 1
           fi
-          if ! gh release create "$TAG" artifacts/* --repo "$REPO" --target "$SOURCE" --prerelease \
+          (cd android-assets && sha256sum ./*.apk | cmp - APK-SHA256SUMS)
+          if ! gh release create "$TAG" artifacts/* android-assets/* --repo "$REPO" --target "$SOURCE" --prerelease \
             --title "$TAG" --notes "QA smoke tests passed for commit $SOURCE."; then
             echo "QA passed, but GitHub could not publish $TAG. Check the output above, tag rules, and whether the release or its assets already exist before retrying." >&2
             exit 1
           fi
 
   production:
-    if: inputs.operation != 'candidate'
-    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (inputs.operation == 'rollback' || (inputs.operation == 'promote' && needs.android.result == 'success')) }}
+    needs: [plan, android]
     runs-on: ubuntu-24.04
     environment:
       name: production
@@ -275,7 +336,7 @@ jobs:
 
   publish-stable:
     if: inputs.operation == 'promote'
-    needs: [plan, production]
+    needs: [plan, production, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -284,7 +345,11 @@ jobs:
         with:
           name: verified-bundle
           path: artifacts
-      - name: Publish the deployed bundle
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-apks
+          path: android-assets
+      - name: Publish the deployed bundle and APKs
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -296,7 +361,8 @@ jobs:
             exit 1
           fi
           STABLE=${TAG%-rc.*}
-          if ! gh release create "$STABLE" artifacts/* --repo "$REPO" --target "$SOURCE" \
+          (cd android-assets && sha256sum ./*.apk | cmp - APK-SHA256SUMS)
+          if ! gh release create "$STABLE" artifacts/* android-assets/* --repo "$REPO" --target "$SOURCE" \
             --title "$STABLE" --notes "Promoted $TAG after production smoke tests. Source: $SOURCE."; then
             echo "Production was deployed and verified, but GitHub could not finish publishing $STABLE. Check the release, its assets, and tag rules before retrying publication." >&2
             exit 1

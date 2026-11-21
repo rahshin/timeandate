@@ -26,6 +26,12 @@ Run the sync command after changing web code. It builds `dist-native/` and copie
 
 For the separate timer development app, run `npm run timer-dev:sync` and open `artifacts/timer-dev/android/` in Android Studio or `artifacts/timer-dev/ios/App/App.xcodeproj` in Xcode. Sync regenerates both projects from the tracked native files. Use **Dashboard → +** to add a timer, then **Start** on its card.
 
+## Download an APK from GitHub Releases
+
+Open the [GitHub Releases page](https://github.com/rahshin/timeandate/releases), choose a candidate or stable release, and expand **Assets**. Download `timeandate-android-debug.apk` for Time And Date or `timers-dev-android-debug.apk` for the separate timer app. These APKs can be installed directly on Android.
+
+The release workflow builds APKs from the selected commit and attaches them to the candidate with `APK-SHA256SUMS`. Promotion verifies and reuses those files. For older candidates with only a web bundle, promotion builds the available Android targets from the candidate tag. Older source revisions may contain only the main app. GitHub publishes the APKs as release assets for direct download.
+
 ## Build for QA
 
 The **Build mobile apps** workflow runs on pull requests and pushes to `main` or `release/**`. Each run builds both targets and uploads four GitHub Actions artifacts. Download the Android debug APK and iOS simulator ZIP for each target from the completed run. To build one target on demand, go to **Actions → Build mobile apps → Run workflow** and select the branch and target.
