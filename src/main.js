@@ -1,5 +1,5 @@
 import "./style.css";
-import { dashboardPath, mountDashboard } from "./dashboard.js";
+import { dashboardPath, dashboardReady, mountDashboard } from "./dashboard.js";
 import { cities, citiesByTimeZone, cityIds, clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
 import {
   durationDisplay,
@@ -351,7 +351,8 @@ function render() {
     else link.removeAttribute("aria-current");
   }
   if (isDashboard) {
-    const open = (interval, linkedTimers) => {
+    const open = async (interval, linkedTimers) => {
+      await dashboardReady;
       if (version !== renderVersion) return;
       const dashboard = mountDashboard(app, {
         path,
