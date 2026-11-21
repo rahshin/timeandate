@@ -350,3 +350,17 @@
 .dashboard-history-board {
   color: var(--muted);
 }
+
+.dashboard-persistence {
+  border-inline-start: 0.25rem solid var(--accent);
+  padding-inline-start: 0.65rem;
+}
+
+.dashboard-history-scope {
+  color: var(--muted);
+  margin-block: 0 1rem;
+}
+
+.dashboard-removal-block p {
+  margin: 0;
+}

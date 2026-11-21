@@ -75,6 +75,7 @@ function recoveredSession(session, checkpoint, now) {
       if (saved.phase !== "preparation" && saved.pauseAt === null) saved.pauseAt = now;
     }
   }
+  if (session.status === "running" && saved.status === "paused") saved.recovered = true;
   if (saved.pauseAt !== null) {
     saved.pauseAt = Number.isFinite(checkpoint)
       ? now - Math.max(0, checkpoint - saved.pauseAt)
@@ -112,21 +113,34 @@ export function commandSession(data, key, action, expected, now) {
   const value = updateSession(action === "start" ? advanced : card.value, action, now);
   if (value === card.value) return false;
   if (value.status === "running" && !value.runId) value.runId = crypto.randomUUID();
+  if (value.status !== "paused") delete value.recovered;
   value.commandRevision = (card.value.commandRevision ?? 0) + 1;
   recordEnd(data, card, value);
   data.cards[key] = { ...card, value, checkpoint: now };
   return true;
 }
 
+export function unfinishedCards(data, keys, now) {
+  return keys.filter(key => {
+    const card = data.cards[key];
+    const definition = sessionDefinition(card?.type);
+    if (!definition?.valid(card.value)) return false;
+    const { status } = advanceSession(definition.normalize(card.value, now), now);
+    return status === "running" || status === "paused";
+  });
+}
+
 export function openDashboardData(onChange) {
   const locks = navigator.locks;
   let state;
   let volatile = false;
+  let needsMigration = false;
   const exclusive = work => locks ? locks.request(transactionLock, work) : work();
   function read() {
     if (volatile) return structuredClone(state);
     try {
       const raw = localStorage.getItem(dataKey);
+      needsMigration = raw === null;
       if (raw !== null) {
         const saved = JSON.parse(raw);
         if (saved?.version === 1 && saved.dashboards && saved.cards && saved.presets && Array.isArray(saved.history)) {
@@ -170,8 +184,7 @@ export function openDashboardData(onChange) {
     const next = read();
     const changed = checkpointSessions(next, Date.now(), { cold });
     // Commit the migrated snapshot even when it contains only ready cards and preferences.
-    const migrated = !volatile && localStorage.getItem(dataKey) === null;
-    publish(next, changed || migrated);
+    publish(next, changed || needsMigration);
   }));
 
   async function change(update, commandKey) {
@@ -197,5 +210,5 @@ export function openDashboardData(onChange) {
   });
   document.addEventListener("visibilitychange", () => tick(document.hidden));
   setInterval(tick, 1000);
-  return { ready, change };
+  return { ready, change, isVolatile: () => volatile };
 }
