@@ -263,10 +263,6 @@ button:hover:not(:disabled) {
   margin: 0 0 0.75rem;
 }
 
-.native-timer h2 {
-  display: none;
-}
-
 .duration-fields {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

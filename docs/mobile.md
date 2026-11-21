@@ -5,7 +5,7 @@
 | Time And Date | `npm run mobile:sync` | `io.github.rahshin.timeandate` | Local builds, GitHub Actions QA, and manual store builds |
 | Time And Date Timers Dev | `npm run timer-dev:sync` | `io.github.rahshin.timeandate.timers.dev` | Local builds and GitHub Actions debug QA alongside Time And Date |
 
-Both targets use the Dashboard timer code. The standalone Interval Timer PWA at `/interval-timer-app/` ships with the web release.
+Both native targets are Dashboard-only and offer Date Countdown, Countdown Timer, Interval Timer, and World Clock through the Dashboard picker. The standalone Interval Timer PWA at `/interval-timer-app/` ships with the web release.
 
 ## Set up and run locally
 

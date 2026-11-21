@@ -1,4 +1,3 @@
-import { Capacitor } from "@capacitor/core";
 import "./style.css";
 import { dashboardPath, mountDashboard } from "./dashboard.js";
 import { cities, citiesByTimeZone, cityIds, clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
@@ -11,23 +10,9 @@ import {
 } from "./duration.js";
 
 const app = document.querySelector("#app");
-const isNative = Capacitor.isNativePlatform();
 const countdownPath = "/countdown";
-const intervalPath = "/interval-timer-v0";
-const durationLink = document.querySelector('nav a[href="/duration"]');
-if (!__NATIVE_BUILD__ && !isNative) {
-  const link = document.createElement("a");
-  link.href = intervalPath;
-  link.dataset.route = "";
-  link.textContent = "Interval Timer";
-  durationLink.before(link);
-}
+const intervalAppPath = "/interval-timer-app/";
 const links = [...document.querySelectorAll("nav a")];
-const dateLink = links.find(link => link.pathname === countdownPath);
-if (isNative) {
-  dateLink.textContent = "Countdown Timer";
-  durationLink.hidden = false;
-}
 const params = () => new URL(location.href).searchParams;
 let redraw = () => {};
 let unmountView;
@@ -55,7 +40,7 @@ document.addEventListener("click", event => {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey ||
       event.ctrlKey || event.shiftKey || event.altKey) return;
   const link = event.target.closest("a[data-route]");
-  if (!link) return;
+  if (!link || (!__NATIVE_BUILD__ && link.pathname === intervalAppPath)) return;
   event.preventDefault();
   const route = link.pathname === "/clocks" && lastBoard
     ? lastBoard
@@ -151,10 +136,7 @@ function renderClocks() {
   app.querySelector("#share").onclick = async () => {
     const status = app.querySelector("#status");
     try {
-      if (
-        !["http:", "https:"].includes(location.protocol) ||
-        isNative
-      ) {
+      if (!["http:", "https:"].includes(location.protocol)) {
         throw new Error("No public address");
       }
       const url = new URL("/clocks", location.origin);
@@ -321,24 +303,22 @@ function renderDurationTimer(panel) {
   };
 }
 
-function renderTimers(durationOnly) {
-  const showDate = !isNative || !durationOnly;
-  const showDuration = !isNative || durationOnly;
-  const heading = !isNative ? "Countdown Timers" : durationOnly ? "Duration Countdown" : "Countdown Timer";
+function renderTimers() {
+  const heading = "Countdown Timers";
   app.innerHTML = `
     <section class="intro">
       <h1>${heading}</h1>
-      ${isNative ? "" : "<p>Count down to a date and time, or set a timer for a duration.</p>"}
+      <p>Count down to a date and time, or set a timer for a duration.</p>
     </section>
-    <div class="timer-panels${isNative ? " native-timer" : ""}">
-      ${showDate ? '<section id="date-panel"></section>' : ""}
-      ${showDuration ? '<section id="duration-panel"></section>' : ""}
+    <div class="timer-panels">
+      <section id="date-panel"></section>
+      <section id="duration-panel"></section>
     </div>`;
-  const date = showDate ? renderDateTimer(app.querySelector("#date-panel")) : null;
-  const duration = showDuration ? renderDurationTimer(app.querySelector("#duration-panel")) : null;
+  const date = renderDateTimer(app.querySelector("#date-panel"));
+  const duration = renderDurationTimer(app.querySelector("#duration-panel"));
   redraw = () => {
-    const dateTitle = date?.();
-    const durationTitle = duration?.();
+    const dateTitle = date();
+    const durationTitle = duration();
     const titles = durationRemaining(durationTimer) > 0
       ? [durationTitle, dateTitle]
       : [dateTitle, durationTitle];
@@ -354,27 +334,30 @@ function render() {
 
   const path = location.pathname === "/" ? dashboardPath : location.pathname;
   const isDashboard = path === dashboardPath || path.startsWith(dashboardPath + "/");
-  const durationOnly = path === "/duration";
-  const isInterval = !__NATIVE_BUILD__ && !isNative && path === intervalPath;
-  const isCountdown = path === countdownPath || durationOnly;
-  const activePath = isDashboard ? dashboardPath : isInterval ? intervalPath
-    : isCountdown ? (isNative && durationOnly ? "/duration" : countdownPath) : "/clocks";
+  if (__NATIVE_BUILD__ && !isDashboard) {
+    changeUrl(dashboardPath, true);
+    return;
+  }
+
+  if (!__NATIVE_BUILD__ && path === "/interval-timer-v0") {
+    location.replace(intervalAppPath + location.search + location.hash);
+    return;
+  }
+
+  const isCountdown = path === countdownPath || path === "/duration";
+  const activePath = isDashboard ? dashboardPath : isCountdown ? countdownPath : "/clocks";
   for (const link of links) {
     if (link.pathname === activePath) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   }
   if (isDashboard) {
-    const open = interval => {
+    const open = (interval, linkedTimers) => {
       if (version !== renderVersion) return;
       const dashboard = mountDashboard(app, {
         path,
-        requestedBoard: new URLSearchParams(location.search).get("board"),
+        requestedBoard: params().get("board"),
         interval,
-        existingDate: () => timerDraft,
-        existingDuration: () => durationTimer,
-        countdownPath,
-        durationPath: isNative ? "/duration" : countdownPath + "#duration-panel",
-        intervalPath: !__NATIVE_BUILD__ && interval ? intervalPath : undefined,
+        linkedTimers,
         navigate: changeUrl,
       });
       if (dashboard) {
@@ -382,30 +365,29 @@ function render() {
         unmountView = dashboard.unmount;
       }
     };
-    if (!__NATIVE_BUILD__ && !isNative) {
+    if (__NATIVE_BUILD__) {
+      open();
+    } else {
       app.textContent = "";
-      import("./timeandate/dashboard.js").then(({ dashboardInterval }) => open(dashboardInterval))
-        .catch(() => {
-          if (version === renderVersion) app.textContent = "Could not load the dashboard. Reload to try again.";
-        });
-    } else open();
+      import("./timeandate/dashboard.js").then(({ dashboardInterval }) => open(dashboardInterval, () => [
+        ["date", timerDraft, countdownPath],
+        ["duration", durationTimer, countdownPath + "#duration-panel"],
+        ["interval", dashboardInterval.existing(), intervalAppPath],
+      ])).catch(() => {
+        if (version === renderVersion) app.textContent = "Could not load the dashboard. Reload to try again.";
+      });
+    }
     return;
   }
-  if (!__NATIVE_BUILD__ && isInterval) {
-    app.textContent = "";
-    import("./timeandate/view.js").then(({ mountMultiTimer }) => {
-      if (version === renderVersion) unmountView = mountMultiTimer(app);
-    }).catch(() => {
-      if (version === renderVersion) app.textContent = "Could not load Interval Timer. Reload to try again.";
-    });
-    return;
-  }
-  if (isCountdown) {
-    renderTimers(durationOnly);
-    if (location.hash === "#duration-panel") document.querySelector("#duration-panel")?.scrollIntoView();
-  } else {
-    document.title = "World Clocks · Time And Date";
-    renderClocks();
+
+  if (!__NATIVE_BUILD__) {
+    if (isCountdown) {
+      renderTimers();
+      if (location.hash === "#duration-panel") document.querySelector("#duration-panel")?.scrollIntoView();
+    } else {
+      document.title = "World Clocks · Time And Date";
+      renderClocks();
+    }
   }
   redraw();
 }
@@ -418,12 +400,14 @@ function readTimer(key, valid, value) {
     // Ignore stale or unavailable device storage.
   }
 }
-timerDraft = readTimer(timerKey, validDateTimer);
-durationTimer = readTimer(durationKey, isDurationTimer);
-window.addEventListener("storage", event => {
-  if (event.key === null || event.key === timerKey) timerDraft = readTimer(timerKey, validDateTimer, event.newValue);
-  if (event.key === null || event.key === durationKey) durationTimer = readTimer(durationKey, isDurationTimer, event.newValue);
-});
+if (!__NATIVE_BUILD__) {
+  timerDraft = readTimer(timerKey, validDateTimer);
+  durationTimer = readTimer(durationKey, isDurationTimer);
+  window.addEventListener("storage", event => {
+    if (event.key === null || event.key === timerKey) timerDraft = readTimer(timerKey, validDateTimer, event.newValue);
+    if (event.key === null || event.key === durationKey) durationTimer = readTimer(durationKey, isDurationTimer, event.newValue);
+  });
+}
 window.addEventListener("popstate", render);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) redraw();

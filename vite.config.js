@@ -6,6 +6,12 @@ export default defineConfig(({ mode }) => {
   const native = mode === "native" || timerDev;
   return {
     define: { __NATIVE_BUILD__: JSON.stringify(native) },
+    plugins: native ? [{
+      name: "dashboard-only-navigation",
+      transformIndexHtml(html) {
+        return html.replace(/^[ \t]*<!-- Web tools -->[\s\S]*?<!-- End web tools -->\r?\n/m, "");
+      },
+    }] : [],
     publicDir: native ? false : "public",
     build: {
       outDir: timerDev ? "artifacts/timer-dev/web" : native ? "dist-native" : "dist",

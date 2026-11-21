@@ -149,3 +149,9 @@ All 34 tests passed. The iOS smoke runner restores the generated project and reb
 Each dashboard name is a link to `/dashboard?board=<id>`. Open it in a new tab or window, or bookmark it using the browser. The ID resolves against dashboards saved in the current browser profile. `/dashboard` still opens the default. A missing or deleted ID falls back to the default. Add, edit, and cancel routes keep the selected board.
 
 Verified with `npm test` (34 passed), `npm run build`, `npm run mobile:build`, `npm run timer-dev:sync`, and `node /tmp/timeandate-dashboard-bookmarks.mjs`. The Chrome preview check covered two tabs with distinct boards, default changes, card placement, add and edit navigation, reload, browser Back, and fallback for an unknown board ID.
+
+### Dashboard-only mobile apps
+
+Both native targets now expose only Dashboard and its four picker items. Native links to old standalone tool paths return to Dashboard. On the web, `/interval-timer-v0` opens the standalone PWA at `/interval-timer-app/`, which uses the existing saved timer data. The web World Clocks and Countdown Timers pages remain available.
+
+Verified with all 34 tests, `npm run build`, `npm run mobile:sync`, `npm run timer-dev:sync`, and `node /tmp/timeandate-dashboard-only.mjs`. The preview check covered native routing and the four picker entries, the web redirect and saved timer link, and offline PWA reload.

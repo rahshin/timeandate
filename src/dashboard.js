@@ -230,7 +230,7 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
   };
 }
 
-export function mountDashboard(root, { path, requestedBoard, interval, existingDate, existingDuration, countdownPath, durationPath, intervalPath, navigate }) {
+export function mountDashboard(root, { path, requestedBoard, interval, linkedTimers, navigate }) {
   if (requestedBoard !== null && !dashboards.boards.some(board => board.id === requestedBoard)) {
     navigate(dashboardPath, true);
     return;
@@ -551,11 +551,7 @@ export function mountDashboard(root, { path, requestedBoard, interval, existingD
     grid.replaceChildren();
     // Standalone timers have their own routes and storage, independent of dashboard cards.
     const linkedBoard = dashboards.boards.find(board => board.id === originalId) ?? dashboards.boards[0];
-    const existing = activeId === linkedBoard.id ? [
-      ["date", existingDate(), countdownPath],
-      ["duration", existingDuration(), durationPath],
-      ["interval", interval?.existing(), intervalPath],
-    ] : [];
+    const existing = activeId === linkedBoard.id ? linkedTimers?.() ?? [] : [];
     for (const [timerType, value, path] of existing) {
       if (value) addCard(timerType, { type: timerType, value }, path, timerType === "interval" ? interval : types[timerType]);
     }

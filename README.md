@@ -4,8 +4,8 @@ Time And Date includes time and date related utilities. The GitHub Actions web r
 
 - **World Clocks** compares the date and local time in selected cities. Sort by city name (**A–Z** or **Z–A**) or by the current UTC offset (**lowest first** or **highest first**). The shared link preserves the order. Try `/clocks?cities=seattle,london,tokyo`.
 - **Dashboard** is the landing page and is also available at `/dashboard`. Use **+** in the tab bar to create a named dashboard and **×** to remove one. Select **Set as default** to choose which dashboard opens first. Use **+** beside the dashboard name to add a timer or a clock for any listed timezone. Each clock can show seconds. New dashboard timers open ready to start. Use **Pause** to hold a timer and **Edit** to change its configuration while stopped or paused. Saving edits returns it to **Ready**. Countdown Timer **Reset** restores the full duration and restarts it if it was running. Date countdowns keep their selected deadline and catch up when resumed. Dashboards and their items are saved on this device. Timers on other dashboards keep running silently. The visible dashboard announces timer changes and can also play a tone when **Timer sound** is enabled. Use a timer’s speaker button to silence its dashboard announcements and tones. The web and Capacitor dashboards offer Date Countdown, Countdown Timer, Interval Timer, and World Clock.
-- **Date Countdown** targets a date, time, and timezone. **Countdown Timer** counts down a duration in hours, minutes, and seconds. The existing standalone countdown screens are also available.
-- **Interval Timer** repeats a timed activity with optional rest between repetitions. The existing web version is also available at `/interval-timer-v0` and in the standalone PWA at `/interval-timer-app/`.
+- **Date Countdown** targets a date, time, and timezone. **Countdown Timer** counts down a duration in hours, minutes, and seconds. Standalone countdown screens are also available on the web.
+- **Interval Timer** repeats a timed activity with optional rest between repetitions. The standalone web PWA is available at `/interval-timer-app/`. Old `/interval-timer-v0` bookmarks open the PWA.
 
 ## Run locally
 
@@ -21,7 +21,7 @@ Vite prints the local URL. The production build is written to `dist/` by `npm ru
 
 ## Build and run mobile apps
 
-The [mobile build guide](docs/mobile.md) covers running iOS and Android locally, building QA artifacts, and building signed releases for TestFlight, the App Store, and Google Play.
+Both mobile apps open Dashboard and include its four item types. The [mobile build guide](docs/mobile.md) covers running iOS and Android locally, building QA artifacts, and building signed releases for TestFlight, the App Store, and Google Play.
 
 ## Install and use Interval Timer
 

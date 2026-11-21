@@ -60,7 +60,7 @@ export async function verifyDeployment(origin, expected, fetchPageImpl = fetch, 
   if (standalonePath) {
     const timerName = standalonePath.slice(1).replace(/-app$/, '');
     const routes = [
-      [renamedTimerRoutes ? '/interval-timer-v0' : '/multi-timer', 'id="app"'],
+      ...(!renamedTimerRoutes ? [['/multi-timer', 'id="app"']] : []),
       [`${standalonePath}/`, '<main class="multi-standalone" id="app">'],
       [`${standalonePath}/manifest.webmanifest`, '"display": "standalone"'],
       [`${standalonePath}/sw.js`, `timeandate-${timerName}-`],
