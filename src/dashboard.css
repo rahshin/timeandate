@@ -7,6 +7,7 @@
 
 .dashboard-add {
   flex: 0 0 2.75rem;
+  width: 2.75rem;
   min-height: 2.75rem;
   display: grid;
   place-items: center;
@@ -164,7 +165,8 @@
   flex: 0 0 auto;
 }
 
-.dashboard-tab a {
+.dashboard-tab a,
+.dashboard-history-tab {
   display: block;
   align-content: center;
   min-height: 2.7rem;
@@ -178,6 +180,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dashboard-tab a {
   border-start-end-radius: 0;
   border-end-end-radius: 0;
 }
@@ -187,7 +192,8 @@
   border-end-start-radius: 0;
 }
 
-.dashboard-tab a[aria-current="page"] {
+.dashboard-tab a[aria-current="page"],
+.dashboard-history-tab[aria-current="page"] {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -249,11 +255,37 @@
   gap: 0.5rem;
 }
 
-.dashboard-mute {
+.dashboard-heading-controls,
+.dashboard-card-controls {
+  display: flex;
+  align-items: start;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.dashboard-icon {
   display: grid;
-  flex: 0 0 2.7rem;
   place-items: center;
-  padding: 0.35rem;
+  flex: 0 0 2.75rem;
+  width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+}
+
+.dashboard-card a.dashboard-icon {
+  background: #242d40;
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  color: inherit;
+}
+
+.dashboard-card a.dashboard-icon:hover {
+  border-color: var(--accent);
+}
+
+.dashboard-icon[hidden],
+.dashboard-heading-controls[hidden] {
+  display: none;
 }
 
 .dashboard-mute[aria-pressed="true"] {
@@ -283,4 +315,38 @@
 .dashboard-advanced-hint {
   color: var(--muted);
   margin: 0.5rem 0 0;
+}
+
+.dashboard-history {
+  margin-block: 1.5rem;
+}
+
+.dashboard-history-tab {
+  flex: none;
+  margin: 0.25rem 0 0.25rem auto;
+}
+
+.dashboard-history-filter {
+  width: min(100%, 24rem);
+}
+
+.dashboard-history-filter input {
+  width: 100%;
+}
+
+.dashboard-history-list {
+  list-style: none;
+  padding: 0;
+}
+
+.dashboard-history-list li {
+  display: grid;
+  gap: 0.25rem;
+  padding-block: 0.65rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.dashboard-history-list time,
+.dashboard-history-board {
+  color: var(--muted);
 }

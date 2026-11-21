@@ -97,6 +97,7 @@ function configureSession(definition, normalize, detail, commands) {
   return {
     ...definition,
     commands,
+    normalize,
     describe(value, now) {
       const session = normalize(value, now);
       return describe(session, now, detail(session.config));
