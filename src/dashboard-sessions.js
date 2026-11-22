@@ -44,6 +44,7 @@ function validSession(value, kind) {
       config.restMs > 999 * 60_000 + 59_000 ||
       !Number.isInteger(config.repetitions) || config.repetitions < 1 || config.repetitions > 999 ||
       ![0, 3000].includes(config.preparationMs) ||
+      (config.speakPhases !== undefined && typeof config.speakPhases !== "boolean") ||
       (config.finalSecondsEnabled !== undefined && typeof config.finalSecondsEnabled !== "boolean") ||
       (config.finalSeconds !== undefined && (!Number.isInteger(config.finalSeconds) ||
         config.finalSeconds < 1 || config.finalSeconds > MAX_FINAL_SECONDS)) ||
@@ -164,6 +165,7 @@ export const dashboardSessionInterval = configureSession({
     ${timeFields("rest", "Rest duration", 0, 2)}
     <details class="dashboard-advanced"><summary>Advanced</summary>
       <label class="dashboard-checkbox"><input name="preparation" type="checkbox"> Speak 3-second preparation</label>
+      <label class="dashboard-checkbox"><input name="speakPhases" type="checkbox"> Speak rest and repetition starts</label>
       <label class="dashboard-checkbox"><input name="finalSecondsEnabled" type="checkbox"> Speak final-seconds countdown</label>
       <label class="field">Final-seconds window (seconds)
         <input name="finalSeconds" type="number" min="1" max="${MAX_FINAL_SECONDS}" value="${DEFAULT_FINAL_SECONDS}" required>
@@ -176,6 +178,7 @@ export const dashboardSessionInterval = configureSession({
     initForegroundFields(fields, config);
     fields.repetitions.value = config.repetitions;
     fields.preparation.checked = Boolean(config.preparationMs);
+    fields.speakPhases.checked = config.speakPhases === true;
     fields.finalSecondsEnabled.checked = config.finalSecondsEnabled ?? false;
     fields.finalSeconds.value = config.finalSeconds ?? DEFAULT_FINAL_SECONDS;
     for (const [prefix, ms] of [["duration", config.durationMs], ["rest", config.restMs]]) {
@@ -190,6 +193,7 @@ export const dashboardSessionInterval = configureSession({
       ...foregroundSettings(fields),
       kind: "interval", durationMs: milliseconds("duration"), restMs: milliseconds("rest"),
       repetitions: fields.repetitions.valueAsNumber, preparation: fields.preparation.checked,
+      speakPhases: fields.speakPhases.checked,
       finalSecondsEnabled: fields.finalSecondsEnabled.checked, finalSeconds: fields.finalSeconds.valueAsNumber,
     });
   },
