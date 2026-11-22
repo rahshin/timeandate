@@ -3,6 +3,9 @@ import { dashboardCountdown, dashboardSessionInterval } from "./dashboard-sessio
 import { Temporal } from "@js-temporal/polyfill";
 import { playTone, unlockTone } from "./timeandate/audio.js";
 import { clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
+import { createForegroundCues, createWakeController } from "./foreground-cues.js";
+import { foregroundPlatform } from "./foreground-platform.js";
+import { advanceSession } from "./timer-session.js";
 import { durationDisplay } from "./duration.js";
 import {
   cardPrefix as prefix, checkpointSessions, commandSession, dataKey, offBoardRuns, openDashboardData, originalId,
@@ -81,6 +84,8 @@ let dashboards;
 let stored;
 let localData;
 let activeId;
+const platform = foregroundPlatform();
+const wake = createWakeController(platform.requestWake);
 const repository = openDashboardData((next, previous, commandKey) => {
   dashboards = next.dashboards;
   stored = new Map(Object.entries(next.cards));
@@ -756,7 +761,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         for (const [action, button] of commandButtons) button.hidden = !view.available.includes(action);
         if (!path && (focused === edit || focused?.parentElement === actions) && focused.hidden) toggle.focus();
       }
-      if (announce && changed && !muted) return `${label}. ${view.status}.`;
+      if (announce && changed) return { text: `${label}. ${view.status}.`, audible: !muted };
     });
     grid.append(card);
   }
@@ -830,8 +835,8 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     }
     wasVisible = visible;
     if (messages.length) {
-      announcement.textContent = messages.join(" ");
-      if (sound.checked) playTone();
+      announcement.textContent = messages.map(message => message.text).join(" ");
+      if (sound.checked && messages.some(message => message.audible)) playTone();
     }
   }
 
@@ -900,6 +905,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
   function onData(event) {
     const { previous, commandKey } = event.detail;
     showPersistenceStatus(root);
+    updateForeground();
     const dashboardsChanged = JSON.stringify(previous.dashboards) !== JSON.stringify(dashboards);
     const priorActive = activeId;
     if (dashboardsChanged) {
@@ -931,13 +937,47 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     if (event.key?.startsWith("timeandate.") && event.key !== dataKey) refresh();
   }
 
+  const cues = createForegroundCues({
+    speech: platform.speech,
+    tone: () => { if (!sound.checked) playTone(); },
+  });
+  let cueBoard;
+
+  function updateForeground(retryWake = false) {
+    if (viewingHistory || !platform.visible()) {
+      cues.clear();
+      wake.update(false);
+      return;
+    }
+    if (cueBoard !== activeId) cues.clear();
+    cueBoard = activeId;
+    const now = Date.now();
+    const rows = [];
+    let awake = false;
+    for (const [key, record] of stored) {
+      const definition = sessionDefinition(record.type);
+      if (!definition || boardId(record) !== activeId || !record.value?.config) continue;
+      const config = record.value.config;
+      if (config.keepAwake && advanceSession(record.value, now).status === "running") awake = true;
+      if (config.speakCompletion || config.preparationMs || config.finalSecondsEnabled) {
+        rows.push({ key, label: record.name || definition.name,
+          muted: record.muted === true, session: record.value });
+      }
+    }
+    cues.update(rows, now);
+    wake.update(awake, retryWake);
+  }
+
   function enableSound() {
-    if (sound.checked) unlockTone();
+    if (sound.checked || [...stored.values()].some(record =>
+      boardId(record) === activeId && !record.muted && record.value?.config?.finalSecondsEnabled)) unlockTone();
+    updateForeground(true);
   }
 
   function resetAnnouncements() {
     wasVisible = false;
     announcement.textContent = "";
+    updateForeground();
   }
 
   root.addEventListener("pointerup", enableSound);
@@ -945,6 +985,10 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
   window.addEventListener("storage", onStorage);
   window.addEventListener("dashboarddata", onData);
   document.addEventListener("visibilitychange", resetAnnouncements, true);
+  window.addEventListener("focus", resetAnnouncements);
+  window.addEventListener("blur", resetAnnouncements);
+  const cueTick = viewingHistory ? undefined : setInterval(updateForeground, 125);
+  updateForeground();
   refreshDashboard();
   refresh();
   renderHistory();
@@ -964,6 +1008,11 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("dashboarddata", onData);
       document.removeEventListener("visibilitychange", resetAnnouncements, true);
+      window.removeEventListener("focus", resetAnnouncements);
+      window.removeEventListener("blur", resetAnnouncements);
+      clearInterval(cueTick);
+      cues.clear();
+      wake.update(false);
     },
   };
 }
