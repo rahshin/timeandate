@@ -60,3 +60,8 @@ Use the same engine, commands, and repository on web and Capacitor. Retain exist
 Exercise 320 px and wide desktop layouts, long board and timer names, enlarged text, keyboard-only navigation, VoiceOver and TalkBack. Use 44 CSS pixels as the review target for touch controls. Verify accessible action names, close-and-return focus for options, sensible focus when controls disappear, and one useful announcement for state changes without speaking each tick. Verify lifecycle and alerts on physical iOS and Android devices separately from simulators.
 
 These are proposed acceptance checks. The panel did not measure completion rates or conduct a usability or assistive-technology study. The remaining product questions are whether first-time users need Start now, whether users need an explicit history-free discard, and whether the narrower off-board cue solves run discovery before extending it.
+
+## Future timezone enhancements
+
+- Add a shared searchable picker for Dashboard Date Countdown, Dashboard World Clock, and standalone Date Countdown. Users can search by city or timezone and save a named timezone ID. [Timezone picker specification](../timezone-picker-spec.md)
+- Reconcile pending and running Date Countdown deadlines when timezone rules change, preserving the selected local date, time, and timezone. [Date Countdown release plan](release-plan.md#future-feature--date-countdown-timezone-rule-updates)

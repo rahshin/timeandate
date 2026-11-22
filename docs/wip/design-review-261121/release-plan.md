@@ -10,6 +10,10 @@ The reconvened panel agreed to release independently useful changes. Product fav
 
 Foreground alerts and wake behavior follow their existing roadmap. They do not enter this redesign release train. The same applies to proposals for instant Start, explicit active discard, analytics, and extra History filters until users show a recurring need.
 
+## Future feature — Searchable timezone picker
+
+Plan a shared city and timezone search for Dashboard Date Countdown, Dashboard World Clock, and standalone Date Countdown. The picker will bundle a city catalog for offline search and retain named timezone IDs in saved settings. [Timezone picker specification](../timezone-picker-spec.md)
+
 ## Future feature — Date Countdown timezone rule updates
 
 Date Countdown takes a local date and time and a named timezone. The app applies the timezone rules for that date automatically, including daylight saving time. The current release assumes those rules stay stable for the life of a countdown.
@@ -17,6 +21,8 @@ Date Countdown takes a local date and time and a named timezone. The app applies
 In a future release, when updated timezone rules become available, re-resolve saved countdowns that are still pending or running. Keep the selected local date, time, and timezone. A countdown to April 10 at 6:00 p.m. should still end at 6:00 p.m. in that timezone under the new rules. If the corresponding instant changes, update the countdown automatically and show a notice explaining that the timezone rules changed and the event still ends at the selected local time.
 
 Define how to handle a selected local time that becomes skipped or occurs twice under the new rules. Cover that case and an unchanged deadline in release verification.
+
+The [timezone picker specification](../timezone-picker-spec.md#future-release--timezone-rule-changes-during-date-countdown) includes the proposed reconciliation and test cases.
 
 ## Per-phase release gate
 
