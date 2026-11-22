@@ -41,6 +41,30 @@ export function targetInstant(wallTime, zone) {
     .toString();
 }
 
+export function dateCountdownShortcut(shortcut, wallTime, zone, now = Temporal.Now.instant()) {
+  const local = now.toZonedDateTimeISO(zone);
+  const toInput = dateTime => dateTime.toPlainDateTime().toString({ smallestUnit: "minute" });
+  if (shortcut === "now") return toInput(local);
+  if (wallTime) {
+    const today = `${local.toPlainDate()}T${wallTime.split("T")[1]}`;
+    try {
+      if (Temporal.Instant.compare(targetInstant(today, zone), now) > 0) return today;
+    } catch {
+      // A saved time may land in a daylight-saving gap or overlap today.
+    }
+  }
+  let next = local.round({ smallestUnit: "minute", roundingMode: "floor" }).add({ minutes: 1 });
+  while (true) {
+    const candidate = toInput(next);
+    try {
+      targetInstant(candidate, zone);
+      return candidate;
+    } catch {
+      next = next.add({ minutes: 1 });
+    }
+  }
+}
+
 export function fillTimeZones(select) {
   const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const zones = new Set([localZone, "UTC", ...Intl.supportedValuesOf("timeZone")]);

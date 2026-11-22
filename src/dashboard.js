@@ -1,7 +1,9 @@
 import "./dashboard.css";
 import { dashboardCountdown, dashboardSessionInterval } from "./dashboard-sessions.js";
 import { playTone, unlockTone } from "./timeandate/audio.js";
-import { clockFormatters, createDateTimer, dateCountdownDisplay, fillTimeZones, validDateTimer } from "./time.js";
+import {
+  clockFormatters, createDateTimer, dateCountdownDisplay, dateCountdownShortcut, fillTimeZones, validDateTimer,
+} from "./time.js";
 import { createForegroundCues, createWakeController } from "./foreground-cues.js";
 import { hasForegroundCues } from "./foreground-cue-policy.js";
 import { foregroundPlatform } from "./foreground-platform.js";
@@ -16,6 +18,10 @@ const dateCountdown = {
   description: "Count down to a date and time in a selected timezone.",
   fields: `
     <label class="field">Target date and time <input name="target" type="datetime-local" required></label>
+    <div class="dashboard-actions">
+      <button type="button" class="secondary" name="targetNow">Now</button>
+      <button type="button" class="secondary" name="targetToday">Today</button>
+    </div>
     <label class="field">Timezone <select name="timezone"></select></label>`,
   init(fields, value) {
     fillTimeZones(fields.timezone);
@@ -23,6 +29,12 @@ const dateCountdown = {
       fields.target.value = value.wallTime;
       fields.timezone.value = value.zone;
     }
+    const setTarget = shortcut => {
+      fields.target.value = dateCountdownShortcut(shortcut, fields.target.value, fields.timezone.value);
+      fields.target.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    fields.targetNow.onclick = () => setTarget("now");
+    fields.targetToday.onclick = () => setTarget("today");
   },
   create(fields, now, previous) {
     const target = createDateTimer(fields.target.value, fields.timezone.value);
