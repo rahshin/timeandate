@@ -19,3 +19,7 @@ Foreground alerts and wake behavior follow their existing roadmap. They do not e
 5. Start the next production phase only after verification of the previous one. Keep it independently reversible through the established release rollback.
 
 See the [release workflow guide](../../ci-cd.md) and the [Phase 1 changelog](../../changelog/design-phase-1/README.md).
+
+## Phase 2 review decisions
+
+Product pointed out that a switcher has no job before a user creates a second dashboard. UX found that changing a native select could trigger navigation before a keyboard user finished browsing. The implementation hides the switcher on a single board and uses a labeled disclosure with links on narrow layouts. Wide layouts give short board lists direct links. Architecture confirmed that destination-board audio should unlock on the same board-selecting gesture in both layouts. History remains global and uses a board in the URL only for return navigation.

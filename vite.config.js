@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
       name: "dashboard-only-header",
       transformIndexHtml(html) {
         return html
-          .replace(/^[ \t]*<nav aria-label="Apps">[\s\S]*?<\/nav>\r?\n/m, "")
+          .replace(/^[ \t]*<a data-web-tool [^\n]*\r?\n/gm, "")
           .replace('class="shell masthead"', 'class="shell masthead masthead-native"');
       },
     }] : [],

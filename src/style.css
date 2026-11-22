@@ -66,6 +66,9 @@ nav {
   gap: 0.4rem;
 }
 nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
   color: var(--muted);
   padding: 0.55rem 0.8rem;
   border-radius: 0.45rem;
@@ -302,6 +305,10 @@ button:hover:not(:disabled) {
 @media (max-width: 42rem) {
   .masthead nav {
     flex-wrap: wrap;
+  }
+
+  .masthead.masthead-native {
+    gap: 0.3rem;
   }
 
   .duration-fields {
