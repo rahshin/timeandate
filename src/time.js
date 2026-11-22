@@ -129,8 +129,12 @@ export function countdown(target, zone, now = Temporal.Now.instant(), showSecond
   return { years, months, days, hours, minutes, ...(showSeconds && { seconds }) };
 }
 
+export function dateCountdownUsesAutomaticSeconds(timer, now) {
+  return Date.parse(timer.instant) - (timer.holdAt ?? now) < 3_600_000;
+}
+
 export function dateCountdownDisplay(timer, now) {
-  const seconds = timer.showSeconds || Date.parse(timer.instant) - now < 3_600_000;
+  const seconds = timer.showSeconds || dateCountdownUsesAutomaticSeconds(timer, now);
   const remaining = countdown(timer.instant, timer.zone, Temporal.Instant.fromEpochMilliseconds(now), seconds);
   const units = { years: "y", months: "mo", days: "d", hours: "h", minutes: "m", seconds: "s" };
   return Object.entries(remaining ?? {})

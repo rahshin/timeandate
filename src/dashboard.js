@@ -2,7 +2,8 @@ import "./dashboard.css";
 import { dashboardCountdown, dashboardSessionInterval } from "./dashboard-sessions.js";
 import { playTone, unlockTone } from "./timeandate/audio.js";
 import {
-  clockFormatters, createDateTimer, dateCountdownDisplay, dateCountdownShortcut, fillTimeZones, validDateTimer,
+  clockFormatters, createDateTimer, dateCountdownDisplay, dateCountdownShortcut, dateCountdownUsesAutomaticSeconds,
+  fillTimeZones, validDateTimer,
 } from "./time.js";
 import { createForegroundCues, createWakeController } from "./foreground-cues.js";
 import { hasForegroundCues } from "./foreground-cue-policy.js";
@@ -733,6 +734,12 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       if (showSeconds && checked !== showSeconds.defaultChecked) {
         showSeconds.defaultChecked = checked;
         showSeconds.checked = checked;
+      }
+      if (definition === dateCountdown) {
+        const secondsLabel = showSeconds.parentElement;
+        const hidden = dateCountdownUsesAutomaticSeconds(current.value, now);
+        if (hidden && document.activeElement === showSeconds) title.focus({ preventScroll: true });
+        if (secondsLabel.hidden !== hidden) secondsLabel.hidden = hidden;
       }
       if (isClock) {
         if (!formats || checked !== formatsShowSeconds) {

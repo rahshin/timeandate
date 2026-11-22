@@ -406,7 +406,7 @@
   margin: 0;
 }
 
-.dashboard-clock-seconds {
+.dashboard-clock-seconds:not([hidden]) {
   display: flex;
   align-items: center;
   gap: 0.4rem;
