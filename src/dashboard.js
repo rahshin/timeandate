@@ -50,7 +50,7 @@ const dateCountdown = {
     return {
       display,
       status: held ? (timer.ready ? "Ready" : "Paused") : milliseconds ? "Running" : "Complete",
-      action: held ? (timer.ready ? "Play" : "Resume") : milliseconds ? "Pause" : "",
+      action: held ? (timer.ready ? "Start" : "Resume") : milliseconds ? "Pause" : "",
       detail: `${timer.wallTime.replace("T", " ")} · ${timer.zone.replaceAll("_", " ")}`,
     };
   },
@@ -663,7 +663,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       }
 
       if (definition.toggle) {
-        toggle = timerButton("Play", definition.toggle);
+        toggle = timerButton("Start", definition.toggle);
         toggle.classList.remove("secondary");
         toggle.classList.add("dashboard-primary");
         if (definition.reset) reset = timerButton("Reset", definition.reset);
