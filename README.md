@@ -19,6 +19,16 @@ npm run dev
 
 Vite prints the local URL. The production build is written to `dist/` by `npm run build`.
 
+The dashboard browser tests run against the built app:
+
+```sh
+npx playwright install chromium
+npm run build
+npm run test:e2e
+```
+
+To test the web bundle used by Android and iOS, run `npm run mobile:build` followed by `TIMEANDATE_TEST_MODE=native npm run test:e2e`.
+
 ## Build and run mobile apps
 
 Both mobile apps open Dashboard and include its four item types. The [mobile build guide](docs/mobile.md) covers running iOS and Android locally, building QA artifacts, and building signed releases for TestFlight, the App Store, and Google Play.

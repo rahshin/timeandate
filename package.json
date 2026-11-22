@@ -15,7 +15,8 @@
     "mobile:sync": "npm run mobile:build && cap sync",
     "mobile:android": "cap open android",
     "mobile:ios": "cap open ios",
-    "timer-dev:sync": "vite build --mode timer-dev && node scripts/sync-timer-dev.mjs"
+    "timer-dev:sync": "vite build --mode timer-dev && node scripts/sync-timer-dev.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@capacitor/android": "8.6.2",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "8.6.2",
+    "@playwright/test": "1.65.1",
     "vite": "^8.3.8",
     "wrangler": "4.162.0"
   },
