@@ -145,7 +145,7 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
     </header>
     ${persistenceNotice}
     ${definition ? `
-      <form class="card dashboard-form">
+      <form class="card dashboard-form" novalidate>
         ${supportsPresets ? `<label class="field">Preset <select name="preset"></select></label>` : ""}
         <label class="field">Name (optional) <input name="timerName" maxlength="80"></label>
         ${definition.fields}
@@ -190,9 +190,6 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
     }
   }
   form.addEventListener("focusout", event => fillEmptyTimerField(event.target));
-  form.addEventListener("keydown", event => {
-    if (event.key === "Enter" && !event.isComposing) fillEmptyTimerField(event.target);
-  });
   form.addEventListener("invalid", event => {
     const advanced = event.target.closest("details");
     if (advanced) advanced.open = true;
@@ -242,6 +239,8 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
 
   form.onsubmit = async event => {
     event.preventDefault();
+    for (const field of fields) fillEmptyTimerField(field);
+    if (!form.reportValidity()) return;
     const now = Date.now();
     const name = fields.timerName.value.trim();
     let value;
