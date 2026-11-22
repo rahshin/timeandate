@@ -74,9 +74,13 @@ test('automatic candidates use the pinned version, advance shipped minor lines, 
   git('-c', 'user.name=Release Test', '-c', 'user.email=release@example.test', 'commit', '--quiet', '-m', 'Initial version');
   const source = git('rev-parse', 'HEAD');
   writeFileSync(join(cwd, 'package.json'), '{"version":"9.0.0"}');
-  const resolveTag = (tag = '') => spawnSync(process.execPath, [script, 'resolve-candidate', 'candidate', tag, source], { cwd, encoding: 'utf8' });
+  const resolveTag = (tag = '', major = false) => spawnSync(process.execPath,
+    [script, 'resolve-candidate', 'candidate', tag, source, String(major)], { cwd, encoding: 'utf8' });
   assert.equal(resolveTag().stdout.trim(), 'v0.1.0-rc.1');
-  for (const tag of ['v0.1.0-rc.2', 'v0.1.0-rc.10', 'v0.1.0-rc.99-extra', 'v9.0.0-rc.50']) git('tag', tag);
+  assert.equal(resolveTag('', true).stdout.trim(), 'v1.0.0-rc.1');
+  git('-c', 'user.name=Release Test', '-c', 'user.email=release@example.test', 'commit', '--quiet', '-am', 'Newer source');
+  git('tag', 'v9.0.0-rc.50');
+  for (const tag of ['v0.1.0-rc.2', 'v0.1.0-rc.10', 'v0.1.0-rc.99-extra']) git('tag', tag, source);
   assert.equal(resolveTag().stdout.trim(), 'v0.1.0-rc.11');
   assert.equal(resolveTag('v1.0.0-rc.1').stdout.trim(), 'v1.0.0-rc.1');
   git('tag', 'v0.1.0');
@@ -88,6 +92,18 @@ test('automatic candidates use the pinned version, advance shipped minor lines, 
   git('tag', 'v0.2.0');
   assert.equal(resolveTag().stdout.trim(), 'v0.3.0-rc.1');
   assert.equal(resolveTag('v0.1.1-rc.1').stdout.trim(), 'v0.1.1-rc.1');
+
+  git('tag', 'v0.6.0', source);
+  assert.equal(resolveTag().stdout.trim(), 'v0.7.0-rc.1');
+  git('tag', 'v1.0.0-rc.1', source);
+  assert.equal(resolveTag().stdout.trim(), 'v1.0.0-rc.2');
+  assert.equal(resolveTag('', true).stdout.trim(), 'v1.0.0-rc.2');
+  const conflictingInputs = resolveTag('v1.0.0-rc.2', true);
+  assert.equal(conflictingInputs.status, 1);
+  assert.match(conflictingInputs.stderr, /either an explicit tag or Major release/);
+  git('tag', 'v1.0.0', source);
+  assert.equal(resolveTag().stdout.trim(), 'v1.1.0-rc.1');
+  assert.equal(resolveTag('', true).stdout.trim(), 'v2.0.0-rc.1');
 });
 
 test('automatic promotion selects the highest published RC for an unshipped version', t => {

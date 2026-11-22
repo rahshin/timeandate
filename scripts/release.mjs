@@ -5,7 +5,7 @@ import { smokeDeployment, validateDeploymentEnvironment } from './release-smoke.
 const candidatePattern = /^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-rc\.[1-9]\d*$/;
 const stablePattern = /^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
 const shaPattern = /^[a-f0-9]{40}$/;
-const [command, operation, tag, sha] = process.argv.slice(2);
+const [command, operation, tag, sha, majorRelease] = process.argv.slice(2);
 
 function sourceShaError(sha) {
   if (!sha?.trim()) {
@@ -16,9 +16,23 @@ function sourceShaError(sha) {
   }
 }
 
-function resolveCandidateTag(tag, sha) {
+function versionParts(tag) {
+  return tag.slice(1).replace('-rc.', '.').split('.').map(BigInt);
+}
+
+function newerTag(tag, previous) {
+  if (!previous) return true;
+  const earlier = versionParts(previous);
+  for (const [index, part] of versionParts(tag).entries()) {
+    if (part !== earlier[index]) return part > earlier[index];
+  }
+  return false;
+}
+
+function resolveCandidateTag(tag, sha, majorRelease) {
   const error = sourceShaError(sha);
   if (error) throw new Error(error);
+  if (tag && majorRelease) throw new Error('Choose either an explicit tag or Major release.');
   if (tag) return tag;
 
   let packageJson;
@@ -39,11 +53,30 @@ function resolveCandidateTag(tag, sha) {
     throw new Error('Set package.json version to a stable numeric version such as 0.1.0, or enter an explicit RC tag.');
   }
   const tags = new Set(execFileSync('git', ['tag', '--list'], { encoding: 'utf8' }).trimEnd().split('\n'));
-  const [major, packageMinor] = version.split('.');
-  let minor = BigInt(packageMinor);
-  while (tags.has(stableTag)) {
-    minor += 1n;
-    stableTag = `v${major}.${minor}.0`;
+  let latestStable;
+  for (const existing of tags) {
+    if (stablePattern.test(existing) && newerTag(existing, latestStable)) latestStable = existing;
+  }
+
+  if (majorRelease) {
+    const [major] = versionParts(latestStable ?? stableTag);
+    stableTag = `v${latestStable ? major + 1n : major || 1n}.0.0`;
+  } else {
+    const reachableTags = execFileSync('git', ['tag', '--merged', sha], { encoding: 'utf8' }).trimEnd().split('\n');
+    let activeVersion;
+    for (const existing of reachableTags) {
+      if (!candidatePattern.test(existing)) continue;
+      const target = existing.split('-rc.')[0];
+      if ((!latestStable || newerTag(target, latestStable)) &&
+          (target === stableTag || newerTag(target, stableTag)) &&
+          newerTag(target, activeVersion)) activeVersion = target;
+    }
+    if (activeVersion) {
+      stableTag = activeVersion;
+    } else if (latestStable && !newerTag(stableTag, latestStable)) {
+      const [major, minor] = versionParts(latestStable);
+      stableTag = `v${major}.${minor + 1n}.0`;
+    }
   }
 
   let highest = 0n;
@@ -58,15 +91,9 @@ function resolveCandidateTag(tag, sha) {
 function resolvePromotionTag(publishedTags) {
   const tags = new Set(execFileSync('git', ['tag', '--list'], { encoding: 'utf8' }).trimEnd().split('\n'));
   let selected;
-  let highest = [];
   for (const tag of publishedTags.split('\n')) {
     if (!candidatePattern.test(tag) || !tags.has(tag) || tags.has(tag.split('-rc.')[0])) continue;
-    const version = tag.slice(1).replace('-rc.', '.').split('.').map(BigInt);
-    const difference = version.findIndex((number, index) => number !== highest[index]);
-    if (!selected || (difference >= 0 && version[difference] > highest[difference])) {
-      selected = tag;
-      highest = version;
-    }
+    if (newerTag(tag, selected)) selected = tag;
   }
   if (!selected) {
     throw new Error('No published release candidate is eligible for promotion. Run candidate and verify it in QA first.');
@@ -104,7 +131,7 @@ try {
       }
     }
   } else if (command === 'resolve-candidate' && operation === 'candidate') {
-    const resolved = resolveCandidateTag(tag, sha);
+    const resolved = resolveCandidateTag(tag, sha, majorRelease === 'true');
     const error = validateReleaseInputs('candidate', resolved, sha);
     if (error) throw new Error(error);
     console.log(resolved);

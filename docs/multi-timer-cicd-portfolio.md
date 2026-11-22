@@ -29,6 +29,10 @@ The website and standalone PWA share the Multi Timer view. The standalone entry 
 3. **Verify QA.** Smoke checks verify the live build identity and key URLs, including the standalone manifest and service worker for this bundle. A successful job publishes the archive and checksum as a GitHub prerelease. The resulting QA site is available for manual browser and install checks.
 4. **Promote the verified artifact.** The **promote** operation downloads the selected candidate and verifies its checksum. After GitHub production approval, the workflow deploys the same archive to production, runs smoke checks, and publishes a stable release. **Rollback** can redeploy a prior stable archive through the same approval path.
 
+The workflow runs from `main` and can build a tested commit from a release branch. For example, after `1.0.0` ships, a branch created from `v0.6.0` can produce a `v0.6.1` patch or a `v0.7.0` minor release. The dispatch pins both the source SHA and the explicit RC tag. The run summary makes those selections auditable. For a new major release, a dedicated flag can select the next major RC line automatically.
+
+QA can host an older candidate while production keeps serving `1.0.0`. Promotion replaces the version on the shared production target. Parallel stable deployments would need a separate target or publishing path.
+
 The standalone mobile app is distributed through the web release. The separate, manually dispatched native workflow produces an Android debug APK and a zipped iOS Simulator build of the existing app. The release path above describes how the example moves through the pipeline. The screenshots show local preview output.
 
 ## FAQ

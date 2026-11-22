@@ -14,6 +14,10 @@ on:
       source_sha:
         description: Optional full source SHA for candidate. Blank uses main at dispatch.
         type: string
+      major_release:
+        description: Candidate only. Select the next major release line. Leave tag blank.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -46,14 +50,37 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           OPERATION: ${{ inputs.operation }}
-          TAG: ${{ inputs.tag }}
-          SOURCE: ${{ inputs.source_sha }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+          REQUESTED_SOURCE: ${{ inputs.source_sha }}
+          MAJOR_RELEASE: ${{ inputs.major_release }}
+          DISPATCH_REF: ${{ github.ref }}
           DISPATCH_SHA: ${{ github.sha }}
         run: |
+          TAG=
+          SOURCE=
+          SOURCE_BRANCHES=
+          show_selection() {
+            {
+              printf '### Release selection\n\n```json\n'
+              jq -n \
+                --arg operation "$OPERATION" --arg requested_tag "$REQUESTED_TAG" \
+                --arg requested_source_sha "$REQUESTED_SOURCE" --argjson major_release "$MAJOR_RELEASE" \
+                --arg workflow_ref "$DISPATCH_REF" --arg dispatch_sha "$DISPATCH_SHA" \
+                --arg selected_tag "$TAG" --arg selected_source_sha "$SOURCE" \
+                --arg source_branches "$SOURCE_BRANCHES" \
+                '{operation: $operation, requested_tag: $requested_tag, requested_source_sha: $requested_source_sha,
+                  major_release: $major_release, workflow_ref: $workflow_ref, dispatch_sha: $dispatch_sha,
+                  selected_tag: $selected_tag, selected_source_sha: $selected_source_sha,
+                  eligible_source_branches: ($source_branches | split("\n") | map(select(length > 0)))}'
+              printf '```\n'
+            } >> "$GITHUB_STEP_SUMMARY"
+          }
+          trap show_selection EXIT
+
           if [ "$OPERATION" = candidate ]; then
-            SOURCE=${SOURCE:-$DISPATCH_SHA}
-            TAG=$(node scripts/release.mjs resolve-candidate "$OPERATION" "$TAG" "$SOURCE")
-            if ! git branch -r --contains "$SOURCE" | grep -Eq '^ +origin/(main|release/[0-9]+\.[0-9]+)$'; then
+            SOURCE=${REQUESTED_SOURCE:-$DISPATCH_SHA}
+            TAG=$(node scripts/release.mjs resolve-candidate "$OPERATION" "$REQUESTED_TAG" "$SOURCE" "$MAJOR_RELEASE")
+            if ! SOURCE_BRANCHES=$(git branch -r --contains "$SOURCE" --format='%(refname:short)' | grep -E '^origin/(main|release/[0-9]+\.[0-9]+)$'); then
               echo "Commit $SOURCE was not found on main or a release/<major>.<minor> branch. Check the SHA and push or merge that commit before retrying." >&2
               exit 1
             fi
@@ -67,6 +94,11 @@ jobs:
               exit 1
             fi
           else
+            if [ "$MAJOR_RELEASE" = true ]; then
+              echo 'Major release applies only to the candidate operation.' >&2
+              exit 1
+            fi
+            TAG=$REQUESTED_TAG
             if [ "$OPERATION" = promote ] && [ -z "$TAG" ]; then
               if ! RELEASES=$(gh api --paginate "repos/$REPO/releases?per_page=100" \
                 --jq '.[] | select(.prerelease and (.draft | not)) | .tag_name'); then
@@ -102,7 +134,6 @@ jobs:
             fi
           fi
           printf 'source=%s\ntag=%s\n' "$SOURCE" "$TAG" >> "$GITHUB_OUTPUT"
-          printf '### Release plan\n\nOperation: %s\n\nTag: %s\n\nSource: %s\n' "$OPERATION" "$TAG" "$SOURCE" >> "$GITHUB_STEP_SUMMARY"
       - name: Verify published bundle and show digest for approval
         if: inputs.operation != 'candidate'
         env:
@@ -146,6 +177,12 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Check candidate browser test entry point
+        run: |
+          if ! node -e 'process.exit(typeof require("./package.json").scripts?.["test:e2e"] === "string" ? 0 : 1)'; then
+            echo "::error::The selected source has no test:e2e script. Backport or add browser tests for this release branch, wait for push CI, then dispatch again with the new source SHA."
+            exit 1
+          fi
       - run: npx --no-install playwright install --with-deps chromium
       - run: npm run test:e2e
       - name: Stamp and package the web output
