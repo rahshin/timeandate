@@ -72,6 +72,7 @@ export function clockFormatters(timeZone, showSeconds = false) {
 
 export function validDateTimer(timer) {
   if (typeof timer?.wallTime !== "string" || typeof timer.zone !== "string") return false;
+  if (timer.showSeconds !== undefined && typeof timer.showSeconds !== "boolean") return false;
   try {
     return targetInstant(timer.wallTime, timer.zone) === timer.instant;
   } catch {
@@ -90,16 +91,26 @@ export function createDateTimer(wallTime, zone) {
   return { wallTime, zone, instant };
 }
 
-export function countdown(target, zone, now = Temporal.Now.instant()) {
+export function countdown(target, zone, now = Temporal.Now.instant(), showSeconds = false) {
   const end = Temporal.Instant.from(target);
   if (Temporal.Instant.compare(now, end) >= 0) return null;
   const remaining = now
     .toZonedDateTimeISO(zone)
     .until(end.toZonedDateTimeISO(zone), {
       largestUnit: "years",
-      smallestUnit: "minutes",
+      smallestUnit: showSeconds ? "seconds" : "minutes",
       roundingMode: "ceil",
     });
-  const { years, months, days, hours, minutes } = remaining;
-  return { years, months, days, hours, minutes };
+  const { years, months, days, hours, minutes, seconds } = remaining;
+  return { years, months, days, hours, minutes, ...(showSeconds && { seconds }) };
+}
+
+export function dateCountdownDisplay(timer, now) {
+  const seconds = timer.showSeconds || Date.parse(timer.instant) - now < 3_600_000;
+  const remaining = countdown(timer.instant, timer.zone, Temporal.Instant.fromEpochMilliseconds(now), seconds);
+  const units = { years: "y", months: "mo", days: "d", hours: "h", minutes: "m", seconds: "s" };
+  return Object.entries(remaining ?? {})
+    .filter(([, value]) => value > 0)
+    .map(([unit, value]) => `${value}${units[unit]}`)
+    .join(" ") || "0s";
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Temporal } from "@js-temporal/polyfill";
-import { citiesByTimeZone, cityIds, countdown, targetInstant } from "./time.js";
+import { citiesByTimeZone, cityIds, countdown, dateCountdownDisplay, targetInstant } from "./time.js";
 
 test("public board links preserve ordering and ignore unknown or duplicate cities", () => {
   assert.deepEqual(cityIds("tokyo,seattle,tokyo,unknown"), [
@@ -52,4 +52,15 @@ test("countdown uses calendar months, rounds partial minutes up, and stops at th
     1,
   );
   assert.equal(countdown(target, "UTC", Temporal.Instant.from(target)), null);
+});
+
+test("dashboard date countdown shows seconds in the final hour and skips zero units", () => {
+  const timer = { instant: "2027-03-02T03:04:00Z", zone: "UTC" };
+  const at = (time, value = timer) => dateCountdownDisplay(value, Date.parse(time));
+  assert.equal(at("2027-03-02T02:03:55Z"), "1h 1m");
+  assert.equal(at("2027-03-02T02:03:55Z", { ...timer, showSeconds: true }), "1h 5s");
+  assert.equal(at("2027-03-02T03:03:55Z"), "5s");
+  assert.equal(at("2027-03-02T03:02:00Z"), "2m");
+  assert.equal(at("2027-03-02T03:03:59.500Z"), "1s");
+  assert.equal(at(timer.instant), "0s");
 });

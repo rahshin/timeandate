@@ -1,13 +1,11 @@
 import "./dashboard.css";
 import { dashboardCountdown, dashboardSessionInterval } from "./dashboard-sessions.js";
-import { Temporal } from "@js-temporal/polyfill";
 import { playTone, unlockTone } from "./timeandate/audio.js";
-import { clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
+import { clockFormatters, createDateTimer, dateCountdownDisplay, fillTimeZones, validDateTimer } from "./time.js";
 import { createForegroundCues, createWakeController } from "./foreground-cues.js";
 import { hasForegroundCues } from "./foreground-cue-policy.js";
 import { foregroundPlatform } from "./foreground-platform.js";
 import { advanceSession } from "./timer-session.js";
-import { durationDisplay } from "./duration.js";
 import {
   cardPrefix as prefix, checkpointSessions, commandSession, dataKey, offBoardRuns, openDashboardData, originalId,
   presetSession, savePreset, sessionDefinition, unfinishedCards,
@@ -26,8 +24,9 @@ const dateCountdown = {
       fields.timezone.value = value.zone;
     }
   },
-  create(fields, now) {
-    return { ...createDateTimer(fields.target.value, fields.timezone.value), holdAt: now, ready: true };
+  create(fields, now, previous) {
+    const target = createDateTimer(fields.target.value, fields.timezone.value);
+    return { ...target, holdAt: now, ready: true, showSeconds: previous?.showSeconds === true };
   },
   toggle(timer, now) {
     const { holdAt, ready, ...target } = timer;
@@ -39,16 +38,8 @@ const dateCountdown = {
     const time = timer.holdAt ?? now;
     const milliseconds = Math.max(0, Date.parse(timer.instant) - time);
     const held = timer.holdAt !== undefined;
-    let display = durationDisplay(milliseconds);
-    if (milliseconds >= 3_600_000) {
-      const units = { years: "y", months: "mo", days: "d", hours: "h", minutes: "m" };
-      display = Object.entries(countdown(timer.instant, timer.zone, Temporal.Instant.fromEpochMilliseconds(time)) ?? {})
-        .filter(([, value]) => value > 0)
-        .map(([unit, value]) => `${value}${units[unit]}`)
-        .join(" ") || display;
-    }
     return {
-      display,
+      display: dateCountdownDisplay(timer, time),
       status: held ? (timer.ready ? "Ready" : "Paused") : milliseconds ? "Running" : "Complete",
       action: held ? (timer.ready ? "Start" : "Resume") : milliseconds ? "Pause" : "",
       detail: `${timer.wallTime.replace("T", " ")} · ${timer.zone.replaceAll("_", " ")}`,
@@ -228,7 +219,7 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
     const name = fields.timerName.value.trim();
     let value;
     try {
-      value = definition.create(fields, now);
+      value = definition.create(fields, now, record?.value);
     } catch (issue) {
       error.textContent = issue.message;
       error.hidden = false;
@@ -569,7 +560,9 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
 
   function addCard(key, record, path, definition = savedDefinition(record)) {
     const isClock = record.type === "clock";
+    const hasSeconds = isClock || definition === dateCountdown;
     let formats;
+    let formatsShowSeconds;
     let showSeconds;
     const zone = isClock ? record.value.zone.replaceAll("_", " ") : "";
     const card = document.createElement("article");
@@ -595,7 +588,8 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         ? '<time class="dashboard-clock"></time>'
         : '<p class="dashboard-clock" role="timer" aria-label="Time remaining"></p>'}
       <p class="dashboard-status"></p>
-      ${isClock ? '<label class="dashboard-clock-seconds"><input type="checkbox"> Seconds</label>' : ""}
+      ${hasSeconds ? `<label class="dashboard-clock-seconds"><input type="checkbox"
+        ${isClock ? "" : 'title="Show seconds before the final hour" aria-label="Show seconds before the final hour"'}> Seconds</label>` : ""}
       <div class="dashboard-actions"></div>
       <p class="dashboard-detail"></p>`;
     const title = card.querySelector("h2");
@@ -678,13 +672,13 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         edit.title = `Edit ${label}`;
       }
       const remove = card.querySelector(".dashboard-remove");
-      if (isClock) {
+      if (hasSeconds) {
         showSeconds = card.querySelector(".dashboard-clock-seconds input");
         showSeconds.onchange = () => {
           const checked = showSeconds.checked;
           void repository.change(data => {
             const current = data.cards[key];
-            if (current?.type !== "clock" || boardId(current) !== boardId(record)) return false;
+            if (current?.type !== record.type || boardId(current) !== boardId(record)) return false;
             current.value.showSeconds = checked;
             return true;
           });
@@ -721,12 +715,17 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
 
     let previousStatus;
     cards.set(key, (now, announce) => {
+      const current = path ? record : stored.get(key);
+      if (!current) return;
+      const checked = current.value.showSeconds === true;
+      if (showSeconds && checked !== showSeconds.defaultChecked) {
+        showSeconds.defaultChecked = checked;
+        showSeconds.checked = checked;
+      }
       if (isClock) {
-        const { showSeconds: checked } = stored.get(key).value;
-        if (!formats || checked !== showSeconds.defaultChecked) {
+        if (!formats || checked !== formatsShowSeconds) {
           formats = clockFormatters(record.value.zone, checked);
-          showSeconds.defaultChecked = checked;
-          showSeconds.checked = checked;
+          formatsShowSeconds = checked;
         }
         const display = formats.time.format(now);
         const date = formats.date.format(now);
@@ -735,8 +734,6 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         if (status.textContent !== date) status.textContent = date;
         return;
       }
-      const current = path ? record : stored.get(key);
-      if (!current) return;
       const muted = path ? linkedMute() : current.muted === true;
       const pressed = String(muted);
       if (mute.getAttribute("aria-pressed") !== pressed) {
