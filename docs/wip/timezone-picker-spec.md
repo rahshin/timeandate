@@ -1,5 +1,7 @@
 # Timezone picker design and implementation specification
 
+This document tracks two future enhancements together. The searchable timezone picker and Date Countdown rule reconciliation can ship independently.
+
 ## Release decision
 
 Replace the long timezone dropdown with one searchable picker in Dashboard Date Countdown, Dashboard World Clock, and the standalone web Date Countdown. Default new forms to the device timezone. Bundle a GeoNames search index and refresh it during major-release preparation. Keep the standalone World Clocks board's separate curated **Add a city** control outside this change. It uses city IDs in share links and has a different purpose.
@@ -58,5 +60,3 @@ The selected wall date and time plus named timezone are the event intent. The sa
 2. Reconcile when authoritative updated rules are observable, for example on load or return to foreground after a runtime update. Browser and WebView APIs do not expose a portable timezone database version. Re-resolving a saved target detects a changed result on that runtime. Define the rule source and cross-device behavior before promising a notification immediately after a government announcement. A GeoNames refresh is independent of this check.
 3. Recompute pending and running deadlines and retain timer lifecycle state. Make the write idempotent and conditional on the stored record still matching the target and old instant so an edit in another tab wins. Use the dashboard repository's concurrency model and define equivalent handling for standalone storage. Store enough notice state to avoid re-alerting for the same update after reload. Leave completed records and history intact.
 4. Confirm exception handling before enabling reconciliation. For a newly skipped or repeated time, the proposed behavior is to retain the saved deadline provisionally and show a review notice with a path to choose a valid target. For a uniquely resolved deadline already in the past, the proposed behavior is to complete an active countdown once. Define how ready and paused timers surface an elapsed deadline before shipping. Add deterministic old-rule/new-rule test fixtures for a moved deadline, an unchanged deadline, gaps, overlaps, overdue targets, concurrent edit, and reload. Check that a successful update keeps the same wall time and produces one notice.
-
-[Date Countdown future release entry](design-review-261121/release-plan.md#future-feature--date-countdown-timezone-rule-updates)
