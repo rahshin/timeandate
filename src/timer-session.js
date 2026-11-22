@@ -8,6 +8,7 @@ export const MAX_FINAL_SECONDS = 999 * 60 + 59;
 export function createTimerSession({
   durationMs, repetitions = 1, restMs = 2000, preparation = false,
   finalSecondsEnabled = false, finalSeconds = DEFAULT_FINAL_SECONDS, kind = "countdown",
+  speakCompletion = false, keepAwake = false,
 }) {
   if (!Number.isSafeInteger(durationMs) || durationMs <= 0 ||
       !Number.isSafeInteger(repetitions) || repetitions <= 0 ||
@@ -24,6 +25,8 @@ export function createTimerSession({
       finalSecondsEnabled, finalSeconds,
     }
     : { kind: "countdown", durationMs, repetitions: 1, restMs: 0, preparationMs: 0 };
+  if (speakCompletion) config.speakCompletion = true;
+  if (keepAwake) config.keepAwake = true;
   return ready(config);
 }
 

@@ -20,6 +20,22 @@ function timeFields(prefix, legend, minutes, seconds) {
   </fieldset>`;
 }
 
+const foregroundFields = `
+  <label class="dashboard-checkbox"><input name="speakCompletion" type="checkbox"> Speak completion</label>
+  <label class="dashboard-checkbox"><input name="keepAwake" type="checkbox"> Keep screen awake</label>`;
+
+function initForegroundFields(fields, config) {
+  if (fields.speakCompletion) fields.speakCompletion.checked = config.speakCompletion === true;
+  if (fields.keepAwake) fields.keepAwake.checked = config.keepAwake === true;
+}
+
+function foregroundSettings(fields) {
+  return {
+    speakCompletion: fields.speakCompletion?.checked === true,
+    keepAwake: fields.keepAwake?.checked === true,
+  };
+}
+
 function validSession(value, kind) {
   const config = value?.config;
   if (config?.kind !== kind || !Number.isInteger(config.durationMs) ||
@@ -120,10 +136,13 @@ export const dashboardCountdown = configureSession({
       <label class="field">Hours <input name="hours" type="number" min="0" max="999" value="0" required></label>
       <label class="field">Minutes <input name="minutes" type="number" min="0" max="59" value="10" required></label>
       <label class="field">Seconds <input name="seconds" type="number" min="0" max="59" value="0" required></label>
-    </div>`,
+    </div>
+    <details class="dashboard-advanced"><summary>Advanced</summary>${foregroundFields}</details>`,
   init(fields, value) {
     if (!value) return;
-    const [hours, minutes, seconds] = durationDisplay(normalizeCountdown(value).config.durationMs).split(":").map(Number);
+    const { config } = normalizeCountdown(value);
+    initForegroundFields(fields, config);
+    const [hours, minutes, seconds] = durationDisplay(config.durationMs).split(":").map(Number);
     fields.hours.value = hours;
     fields.minutes.value = minutes;
     fields.seconds.value = seconds;
@@ -131,7 +150,7 @@ export const dashboardCountdown = configureSession({
   create(fields) {
     const durationMs = durationMilliseconds(fields.hours.valueAsNumber, fields.minutes.valueAsNumber, fields.seconds.valueAsNumber);
     if (!durationMs) throw new Error("Enter a duration greater than zero.");
-    return createTimerSession({ durationMs });
+    return createTimerSession({ durationMs, ...foregroundSettings(fields) });
   },
   valid: value => validSession(value, "countdown") || isDurationTimer(value),
 }, normalizeCountdown, config => `Duration ${durationDisplay(config.durationMs)}`, { stop: "Stop", reset: "Reset" });
@@ -144,16 +163,17 @@ export const dashboardSessionInterval = configureSession({
     <label class="field">Repetitions <input name="repetitions" type="number" min="1" max="999" value="3" required></label>
     ${timeFields("rest", "Rest duration", 0, 2)}
     <details class="dashboard-advanced"><summary>Advanced</summary>
-      <label class="dashboard-checkbox"><input name="preparation" type="checkbox"> 3-second preparation</label>
-      <label class="dashboard-checkbox"><input name="finalSecondsEnabled" type="checkbox"> Final-seconds countdown</label>
+      <label class="dashboard-checkbox"><input name="preparation" type="checkbox"> Speak 3-second preparation</label>
+      <label class="dashboard-checkbox"><input name="finalSecondsEnabled" type="checkbox"> Speak final-seconds countdown</label>
       <label class="field">Final-seconds window (seconds)
         <input name="finalSeconds" type="number" min="1" max="${MAX_FINAL_SECONDS}" value="${DEFAULT_FINAL_SECONDS}" required>
       </label>
-      <p class="dashboard-advanced-hint">Spoken cues will be available in a later update.</p>
+      ${foregroundFields}
     </details>`,
   init(fields, value) {
     if (!value) return;
     const { config } = normalizeInterval(value, Date.now());
+    initForegroundFields(fields, config);
     fields.repetitions.value = config.repetitions;
     fields.preparation.checked = Boolean(config.preparationMs);
     fields.finalSecondsEnabled.checked = config.finalSecondsEnabled ?? false;
@@ -167,6 +187,7 @@ export const dashboardSessionInterval = configureSession({
     const milliseconds = prefix => fields[prefix + "Minutes"].valueAsNumber * 60_000 +
       fields[prefix + "Seconds"].valueAsNumber * 1000;
     return createTimerSession({
+      ...foregroundSettings(fields),
       kind: "interval", durationMs: milliseconds("duration"), restMs: milliseconds("rest"),
       repetitions: fields.repetitions.valueAsNumber, preparation: fields.preparation.checked,
       finalSecondsEnabled: fields.finalSecondsEnabled.checked, finalSeconds: fields.finalSeconds.valueAsNumber,

@@ -51,7 +51,8 @@ test("migration keeps board identities, default, placement, mute, and older time
 test("presets round-trip settings and create independent ready timers", () => {
   const data = empty();
   const interval = createTimerSession({ kind: "interval", durationMs: 12000, repetitions: 4,
-    restMs: 3000, preparation: true, finalSecondsEnabled: true, finalSeconds: 8 });
+    restMs: 3000, preparation: true, finalSecondsEnabled: true, finalSeconds: 8,
+    speakCompletion: true, keepAwake: true });
   savePreset(data, "exercise", "interval", "Stretch", { ...interval, status: "paused", runId: "run" });
   const saved = JSON.parse(JSON.stringify(data)).presets.exercise;
   const first = presetSession(saved);

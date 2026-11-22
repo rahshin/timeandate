@@ -224,3 +224,27 @@ Manual iOS touch and screen-reader checks remain open. The available simulator h
 - History now has a separate tab at `/dashboard/history` with a case-insensitive timer-name search. Rows begin with the local end date and time, then show the timer name, outcome and repetition summary where applicable. Dashboard names are omitted from rows.
 - All 41 tests passed with `npm test`. `npm run build`, `npm run timer-dev:sync`, and `npm run mobile:sync` succeeded. The Chrome check `node /tmp/timeandate-phase3-review.mjs` covered the updated flow, including a 360-pixel viewport, canceled and confirmed removal, a direct edit URL while paused, and a timer's history after its card was removed.
 - Both Android APKs and both iOS simulator apps were rebuilt at the artifact paths above. The Timers Dev installs showed the History tab and Dashboard on Android and iOS. The iOS screenshot is `/tmp/timeandate-phase3-review-ios.png`. The detailed interaction checks for these review updates ran in Chrome.
+
+## Phase 4 foreground speech and screen wake · 2026-11-21
+
+Local branch `feat/timer-foreground-cues` starts from `5546841` on `main`. Countdown and Interval Timer Advanced settings now include **Speak completion** and **Keep screen awake**. Both default off and round-trip through presets. The existing Interval preparation and final-seconds settings control their respective speech cues. A short repetition starts speaking only after its first elapsed second. Natural repetition completion uses a tone instead of a spoken zero.
+
+One queue serves up to two unmuted timers on the visible board. Completion takes priority, expired numbers drop, and switching boards, muting, or backgrounding cancels ineligible speech. The web uses browser synthesis and screen wake where available. Android uses TextToSpeech and the activity window flag. iOS uses AVSpeechSynthesizer and the app idle-timer setting. Wake applies while an opted-in timer is running on the visible board. Media or wake capability failures leave the timer and its on-screen status usable.
+
+### Verification
+
+- `npm test` passed 50 tests. Focused coverage includes cue collisions, stale numbers, short repetitions, mute, unavailable speech, wake failures and late grants.
+- `npm run build`, `npm run timer-dev:sync`, and `npm run mobile:sync` passed.
+- `node /tmp/timeandate-phase4-web.mjs` verified the production preview using mocked speech and wake APIs. It covered defaults, wake acquisition and release, completion, mute, route changes, legacy web routes and offline PWA reload. `node /tmp/timeandate-off-board-runs.mjs` passed the cross-board navigation, focus and cold recovery regression.
+- Both Android debug APKs built with `sh ./gradlew --offline :app:assembleDebug` in their Android project directories. `sh ./gradlew --offline :app:testDebugUnitTest` passed in the existing app. The Pixel 9a emulator check used `node /tmp/timeandate-phase4-android-instrumented.mjs` against a temporary debug build to verify the native speech bridge, the wake flag, and its release on Home. The clean APK was then rebuilt, installed, and opened.
+- Both iOS apps built with `xcodebuild -scheme App -sdk iphonesimulator -configuration Debug -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO build`, using the projects and artifact paths below and the local Swift package cache. The iPhone simulator harness `/tmp/timeandate-phase4-ios.sh` confirmed that the native speech call settled and the idle-timer override set and released. The clean development app was rebuilt and reinstalled after the harness.
+
+| Target | Artifact |
+| --- | --- |
+| Web preview and PWA | `dist/` and `dist/interval-timer-app/` |
+| Timers Dev Android | `artifacts/timer-dev/android/app/build/outputs/apk/debug/app-debug.apk` |
+| Existing Android app | `android/app/build/outputs/apk/debug/app-debug.apk` |
+| Timers Dev iOS | `artifacts/timer-dev/ios-build/Build/Products/Debug-iphonesimulator/App.app` |
+| Existing iOS app | `artifacts/phase4-existing-ios/Build/Products/Debug-iphonesimulator/App.app` |
+
+Physical-device playback and screen-wake duration remain unverified. Changes are local.
