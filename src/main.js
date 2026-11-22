@@ -360,6 +360,7 @@ function render(focusTarget) {
         path,
         focusTarget,
         requestedBoard: params().get("board"),
+        requestedTimer: params().get("timer"),
         interval,
         linkedTimers,
         navigate: changeUrl,

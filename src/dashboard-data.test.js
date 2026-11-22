@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  cardPrefix, checkpointSessions, commandSession, migrateDashboardData, unfinishedCards, presetSession, savePreset,
+  cardPrefix, checkpointSessions, commandSession, migrateDashboardData, offBoardRuns, presetSession, savePreset, unfinishedCards,
 } from "./dashboard-data.js";
 import { createTimerSession } from "./timer-session.js";
 
@@ -198,4 +198,29 @@ test("removal checks fresh unfinished sessions and allows a deadline-ended card"
   checkpointSessions(data, 4000);
   assert.equal(data.history.length, 1);
   assert.equal(data.history[0].status, "complete");
+});
+
+test("off-board navigation lists only unfinished timer sessions on other existing dashboards", () => {
+  const data = empty();
+  data.dashboards.boards.push({ id: "training", name: "Training" }, { id: "work", name: "Deep work" });
+  add(data, "current", { durationMs: 8000 });
+  add(data, "running", { durationMs: 8000 });
+  add(data, "paused", { kind: "interval", durationMs: 8000, repetitions: 2 });
+  add(data, "expired", { durationMs: 1000 });
+  add(data, "missing", { durationMs: 8000 });
+  add(data, "ready", { durationMs: 8000 });
+  for (const key of ["running", "expired", "ready"]) data.cards[key].dashboardId = "training";
+  data.cards.paused.dashboardId = "work";
+  data.cards.missing.dashboardId = "deleted";
+  data.cards.date = { type: "date", dashboardId: "training", value: { instant: "2030-01-01T00:00:00Z" } };
+  for (const key of ["current", "running", "paused", "expired", "missing"]) command(data, key, "start", 1000);
+  command(data, "paused", "pause", 1500);
+  assert.deepEqual(offBoardRuns(data, "original", 2000), [
+    { key: "running", dashboardId: "training", dashboardName: "Training", name: "running", status: "running", recovered: false },
+    { key: "paused", dashboardId: "work", dashboardName: "Deep work", name: "paused", status: "paused", recovered: false },
+  ]);
+  assert.equal(data.history.length, 0);
+  checkpointSessions(data, 7000);
+  checkpointSessions(data, 25000, { cold: true });
+  assert.equal(offBoardRuns(data, "original", 25000)[0].recovered, true);
 });

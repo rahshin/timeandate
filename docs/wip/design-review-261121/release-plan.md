@@ -23,3 +23,7 @@ See the [release workflow guide](../../ci-cd.md) and the [Phase 1 changelog](../
 ## Phase 2 review decisions
 
 Product pointed out that a switcher has no job before a user creates a second dashboard. UX found that changing a native select could trigger navigation before a keyboard user finished browsing. The implementation hides the switcher on a single board and uses a labeled disclosure with links on narrow layouts. Wide layouts give short board lists direct links. Architecture confirmed that destination-board audio should unlock on the same board-selecting gesture in both layouts. History remains global and uses a board in the URL only for return navigation.
+
+## Phase 3 review decisions
+
+The cue appears only on Dashboard and only when another board has an unfinished Countdown or Interval Timer. Product's concern about duplicate controls was resolved by linking to the owning card. Architecture verified that the projection reads existing state and honors its deadline without triggering commands. UX reviewed the narrow layout and identified a need for links that also reveal the exact timer when opened in a new tab. The link carries both board and card identity and falls back to the board if the card no longer exists. Browser checks cover navigation, focus continuity during peer-tab changes, and identical timer names. A separate usability study and assistive-technology testing remain open.
