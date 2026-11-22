@@ -29,6 +29,8 @@ const dateCountdown = {
     if (value) {
       fields.target.value = value.wallTime;
       fields.timezone.value = value.zone;
+    } else {
+      fields.target.value = dateCountdownShortcut("today", "", fields.timezone.value);
     }
     const setTarget = shortcut => {
       fields.target.value = dateCountdownShortcut(shortcut, fields.target.value, fields.timezone.value);
@@ -179,6 +181,18 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
   definition.init?.(form.elements, record?.value);
   if (record) form.elements.timerName.value = record.name;
   form.oninput = () => { error.hidden = true; };
+  function fillEmptyTimerField(field) {
+    if (!(field instanceof HTMLInputElement) || !field.required || !field.validity.valueMissing ||
+        field.validity.badInput) return;
+    if (field.type === "number") field.value = field.min || "0";
+    if (definition === dateCountdown && field === form.elements.target) {
+      field.value = dateCountdownShortcut("today", "", form.elements.timezone.value);
+    }
+  }
+  form.addEventListener("focusout", event => fillEmptyTimerField(event.target));
+  form.addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.isComposing) fillEmptyTimerField(event.target);
+  });
   form.addEventListener("invalid", event => {
     const advanced = event.target.closest("details");
     if (advanced) advanced.open = true;
