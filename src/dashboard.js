@@ -569,7 +569,8 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
 
   function addCard(key, record, path, definition = savedDefinition(record)) {
     const isClock = record.type === "clock";
-    const formats = isClock ? clockFormatters(record.value.zone, record.value.showSeconds) : undefined;
+    let formats;
+    let showSeconds;
     const zone = isClock ? record.value.zone.replaceAll("_", " ") : "";
     const card = document.createElement("article");
     card.className = "card dashboard-card";
@@ -593,7 +594,10 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
               <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
             </svg>
           </summary>
-          <button type="button" class="secondary dashboard-remove">Remove</button>
+          <div class="dashboard-card-options-panel">
+            ${isClock ? '<label><input type="checkbox"> Show seconds</label>' : ""}
+            <button type="button" class="secondary dashboard-remove">Remove</button>
+          </div>
         </details>` : ""}
         </div>
       </div>
@@ -691,6 +695,18 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         cardOptions.open = false;
         optionsSummary.focus();
       };
+      if (isClock) {
+        showSeconds = cardOptions.querySelector("input");
+        showSeconds.onchange = () => {
+          const checked = showSeconds.checked;
+          void repository.change(data => {
+            const current = data.cards[key];
+            if (current?.type !== "clock" || boardId(current) !== boardId(record)) return false;
+            current.value.showSeconds = checked;
+            return true;
+          });
+        };
+      }
       remove.setAttribute("aria-label", `Remove ${label}`);
       remove.title = `Remove ${label}`;
       remove.onclick = async () => {
@@ -724,7 +740,13 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
 
     let previousStatus;
     cards.set(key, (now, announce) => {
-      if (formats) {
+      if (isClock) {
+        const { showSeconds: checked } = stored.get(key).value;
+        if (!formats || checked !== showSeconds.defaultChecked) {
+          formats = clockFormatters(record.value.zone, checked);
+          showSeconds.defaultChecked = checked;
+          showSeconds.checked = checked;
+        }
         const display = formats.time.format(now);
         const date = formats.date.format(now);
         if (clock.textContent !== display) clock.textContent = display;
@@ -930,7 +952,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       const card = localData.cards[key];
       const old = previous.cards[key];
       return !old || card.name !== old.name || card.type !== old.type || card.dashboardId !== old.dashboardId ||
-        (card.type === "clock" && JSON.stringify(card.value) !== JSON.stringify(old.value));
+        (card.type === "clock" && card.value.zone !== old.value.zone);
     });
     if (priorActive !== activeId || structuralChange ||
         linkedBoard(previous.dashboards.boards) !== linkedBoard(dashboards.boards)) refresh();

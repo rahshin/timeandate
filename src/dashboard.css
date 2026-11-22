@@ -422,12 +422,24 @@
   display: none;
 }
 
-.dashboard-card-options .dashboard-remove {
+.dashboard-card-options-panel {
   position: absolute;
   inset-inline-end: 0;
   top: calc(100% + 0.25rem);
   z-index: 1;
+  display: grid;
   white-space: nowrap;
+}
+
+.dashboard-card-options-panel label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  background: var(--panel);
+  cursor: pointer;
 }
 
 .dashboard-card .dashboard-detail {
