@@ -406,30 +406,6 @@
   margin: 0;
 }
 
-.dashboard-card-options {
-  position: relative;
-}
-
-.dashboard-card-options summary {
-  border: 1px solid var(--line);
-  border-radius: 0.45rem;
-  background: #212a3e;
-  list-style: none;
-  cursor: pointer;
-}
-
-.dashboard-card-options summary::-webkit-details-marker {
-  display: none;
-}
-
-.dashboard-card-options .dashboard-remove {
-  position: absolute;
-  inset-inline-end: 0;
-  top: calc(100% + 0.25rem);
-  z-index: 1;
-  white-space: nowrap;
-}
-
 .dashboard-clock-seconds {
   display: flex;
   align-items: center;

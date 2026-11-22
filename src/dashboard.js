@@ -588,15 +588,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
           </svg>
         </button>`}
         ${!path && definition.toggle ? `<a class="dashboard-icon dashboard-edit" data-route>${penIcon}</a>` : ""}
-        ${!path && isClock ? '<button type="button" class="secondary dashboard-icon dashboard-remove">×</button>' : ""}
-        ${!path && !isClock ? `<details class="dashboard-card-options">
-          <summary class="dashboard-icon" aria-label="Timer or clock options" title="Options">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-              <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
-            </svg>
-          </summary>
-          <button type="button" class="secondary dashboard-remove">Remove</button>
-        </details>` : ""}
+        ${!path ? '<button type="button" class="secondary dashboard-icon dashboard-remove">×</button>' : ""}
         </div>
       </div>
       ${isClock
@@ -686,16 +678,6 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         edit.title = `Edit ${label}`;
       }
       const remove = card.querySelector(".dashboard-remove");
-      const cardOptions = card.querySelector(".dashboard-card-options");
-      const optionsSummary = cardOptions?.querySelector("summary");
-      if (cardOptions) {
-        optionsSummary.setAttribute("aria-label", `Options for ${label}`);
-        cardOptions.onkeydown = event => {
-          if (event.key !== "Escape" || !cardOptions.open) return;
-          cardOptions.open = false;
-          optionsSummary.focus();
-        };
-      }
       if (isClock) {
         showSeconds = card.querySelector(".dashboard-clock-seconds input");
         showSeconds.onchange = () => {
@@ -714,8 +696,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         const id = boardId(record);
         let blocked = unfinishedCards(localData, [key], Date.now());
         if (blocked.length) {
-          if (cardOptions) cardOptions.open = false;
-          (optionsSummary ?? remove).focus();
+          remove.focus();
           showRemovalBlock(id, blocked, false);
           return;
         }
@@ -731,8 +712,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
           return true;
         });
         if (blocked.length) {
-          if (cardOptions) cardOptions.open = false;
-          (optionsSummary ?? remove).focus();
+          remove.focus();
           showRemovalBlock(id, blocked, false);
         }
         if (removed) add.focus();
