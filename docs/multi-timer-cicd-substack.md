@@ -26,7 +26,7 @@ For the existing Android and iOS apps, `npm run mobile:sync` builds a different 
 
 I start from the feature branch, `feat/multi-timer`. The path to release is to push it to GitHub, open a pull request into `main`, and merge after the checks pass. CI lints the GitHub Actions workflows, installs dependencies from the lockfile, runs tests, and builds both targets. After the merge, the Release workflow looks for a successful **push** CI run for the exact commit selected as the release source.
 
-I then dispatch **Release** with the **candidate** operation. With the inputs empty, it uses the `main` commit at dispatch and derives the next release candidate tag from the version in that commit. It builds the web output, stamps it with the candidate tag and commit SHA, compresses it, and calculates a SHA-256 checksum.
+I then dispatch **Release** with the **candidate** operation. A blank source uses the `main` commit at dispatch. A blank tag can continue an open RC line in that commit's history, and the **Major release** option starts or continues the next major line. The run summary records the inputs and the exact tag and commit selected. The workflow builds the web output, stamps it with the candidate tag and commit SHA, compresses it, and calculates a SHA-256 checksum.
 
 The QA job verifies the checksum, deploys to Cloudflare, and checks that the live site identifies itself as the expected build. For this example it also checks the integrated route, the standalone page, the manifest, and the service worker. Once those checks pass, GitHub publishes a prerelease with the bundle and checksum attached. That gives me a specific candidate to review in QA. I can open the standalone entry on a phone, install it, and try reopening it offline.
 
@@ -37,6 +37,12 @@ When QA is ready, I dispatch **promote** with the prerelease tag. The workflow d
 The standalone mobile app ships with that web deployment. The separate **Build mobile apps** workflow creates a debug APK and an iOS Simulator build for testing the existing Capacitor app. The production release in this example is the Cloudflare deployment and its stable GitHub release.
 
 The same artifact-based approach supports rollback. I can select a previous stable tag, approve the deployment, and restore its stored bundle. Its smoke checks follow the contents of the selected release, so a bundle built before Multi Timer can still be restored.
+
+## An old release can have a new candidate
+
+If `1.0.0` is live and I need to fix the older `0.6.0` code, I create `release/0.6` from that tag and run a patch PR there. A compatible feature on the same older code would go through `release/0.7` for a minor release. I create these branches when needed. Once the branch's commit passes CI, I still dispatch from `main`, but pass that commit's SHA and an explicit tag such as `v0.6.1-rc.1` or `v0.7.0-rc.1`. Older branches need browser tests that match the app they ship.
+
+This lets me validate an older release line in QA while `1.0.0` stays live. Promotion uses the same production deployment target, so approving the older candidate would replace the live web app. Restoring the exact `0.6.0` release is a different operation. I use **rollback** to deploy its saved bundle without building a new candidate.
 
 ## FAQ
 

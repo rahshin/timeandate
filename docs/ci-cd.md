@@ -47,6 +47,23 @@ Suppose QA is testing `v0.2.0-rc.1`. New work has already landed on `main`, and 
 5. Dispatch `promote`. Leave `tag` blank to select the highest published RC by version and RC number, skipping versions that already have a stable tag. Enter an explicit RC tag to promote a specific candidate. Review the selected tag and digest in the plan summary and confirm they match the candidate you tested before selecting **Review deployments → Approve and deploy**. The production job deploys the verified candidate bundle, validates live identity, and publishes the stable tag and release with identical assets. The deployed manifest retains the original candidate tag to identify the payload. The stable release notes link it to the release version.
 6. If production needs recovery, dispatch `rollback` with an earlier stable tag. Review and approve it through the same production environment. Rollback uses the saved bundle and verifies the live result.
 
+## Release from an older production tag
+
+Create a release branch only when you need it. The workflow builds and deploys a tested commit. Creating the branch from a tag, applying the change, and merging its PR are separate Git steps.
+
+| If `v1.0.0` is already live | Base tag | Branch to create | Explicit candidate tag | Release type |
+| --- | --- | --- | --- | --- |
+| Fix a bug on the old `0.6` line | `v0.6.0` | `release/0.6` | `v0.6.1-rc.1` | Patch |
+| Add a compatible feature to the old `0.x` line | `v0.6.0` | `release/0.7` | `v0.7.0-rc.1` | Minor |
+| Restore the exact build that previously shipped | Published `v0.6.0` | None needed | Use `rollback` with stable tag `v0.6.0` | Restore |
+
+For example, to prepare the minor release:
+
+1. Run `git fetch origin --tags`, then `git switch -c release/0.7 v0.6.0` and `git push -u origin release/0.7`. If the branch already exists, check it out and verify its history before adding the change.
+2. Open and merge a feature PR into `release/0.7`. A branch from `v0.6.0` predates the candidate browser gate. Add or backport the `test:e2e` script, Playwright dependency, and browser scenarios appropriate to the older UI. Make sure they pass against that branch's production build. Wait for the release branch's push CI to pass.
+3. In **Actions → Release → Run workflow**, select `main`, set `operation=candidate`, enter `v0.7.0-rc.1` in `tag`, and enter the tested release-branch SHA in `source_sha`. Leave **Major release** off. Verify the source and tag in the run summary and test the build on QA.
+4. If you intend to put `0.7.0` live, run `promote` with that exact candidate tag and approve deployment. The current workflow has one production web target, so this replaces the live `1.0.0` build. To keep `1.0.0` live, stop after QA publishes the prerelease. Publishing a stable maintenance release in parallel requires a separate publish path or deployment target.
+
 ## Troubleshooting
 
 - **CI or QA failed.** Fix the cause and run again with the same candidate tag if it is still unused. Move to the next RC number after publication.

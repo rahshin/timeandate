@@ -177,6 +177,12 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Check candidate browser test entry point
+        run: |
+          if ! node -e 'process.exit(typeof require("./package.json").scripts?.["test:e2e"] === "string" ? 0 : 1)'; then
+            echo "::error::The selected source has no test:e2e script. Backport or add browser tests for this release branch, wait for push CI, then dispatch again with the new source SHA."
+            exit 1
+          fi
       - run: npx --no-install playwright install --with-deps chromium
       - run: npm run test:e2e
       - name: Stamp and package the web output
