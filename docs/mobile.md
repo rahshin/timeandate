@@ -34,15 +34,15 @@ The release workflow builds APKs from the selected commit and attaches them to t
 
 ## Build for QA
 
-The **Build mobile apps** workflow runs on pull requests and pushes to `main` or `release/**`. Each run builds both targets and uploads four GitHub Actions artifacts. Download the Android debug APK and iOS simulator ZIP for each target from the completed run. To build one target on demand, go to **Actions → Build mobile apps → Run workflow** and select the branch and target.
+The **Build mobile apps** workflow runs on pull requests and pushes to `main` or `release/**`. Each run builds both targets and uploads an Android debug APK and an unsigned Release iOS Simulator ZIP for each target. To build one target on demand, go to **Actions → Build mobile apps → Run workflow** and select the branch and target.
 
 To produce the equivalent artifacts locally, run `npm run mobile:sync` first. For the separate timer app, run `npm run timer-dev:sync` and use the alternate project and output paths in the table below.
 
 ```sh
 (cd android && sh ./gradlew :app:assembleDebug)
 xcodebuild -project ios/App/App.xcodeproj -scheme App -sdk iphonesimulator \
-  -configuration Debug -derivedDataPath ios-build CODE_SIGNING_ALLOWED=NO build
-ditto -c -k --keepParent ios-build/Build/Products/Debug-iphonesimulator/App.app timeandate-ios-simulator.zip
+  -configuration Release -derivedDataPath ios-build CODE_SIGNING_ALLOWED=NO build
+ditto -c -k --keepParent ios-build/Build/Products/Release-iphonesimulator/App.app ios-simulator-release.zip
 ```
 
 | Target | Android project and APK | Xcode project and simulator output |
@@ -54,11 +54,37 @@ To install the APK or simulator app, start the emulator or simulator first. For 
 
 ```sh
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-xcrun simctl install booted ios-build/Build/Products/Debug-iphonesimulator/App.app
+xcrun simctl install booted ios-build/Build/Products/Release-iphonesimulator/App.app
 xcrun simctl launch booted io.github.rahshin.timeandate
 ```
 
 For Timers Dev, substitute the paths from the table and launch `io.github.rahshin.timeandate.timers.dev`. The iOS simulator artifact runs in Simulator. For QA through TestFlight or Google Play on physical devices, use the signed release process below and distribute to testers first.
+
+## Build a privately signed APK for Android testers
+
+Use **Actions → Build Android sideload APK → Run workflow** on a trusted branch. This workflow runs the tests, builds the Android Release variant, and verifies the APK's alignment, signature, and non-debuggable manifest before uploading it.
+
+1. Create a dedicated sideload signing key if you do not already have one. Run the command below on your computer and choose a password when prompted. Store a backed-up copy of the keystore securely so testers can install updates.
+
+   ```sh
+   keytool -genkeypair -keystore /path/to/timeandate-sideload.p12 -storetype PKCS12 \
+     -alias timeandate-sideload -keyalg RSA -keysize 3072 -validity 10000
+   ```
+
+2. In GitHub **Settings → Environments**, create `mobile-sideload` and restrict deployments to trusted branches. Add the environment secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, and `ANDROID_KEY_PASSWORD`. For a PKCS#12 keystore created with the command above, use the same password for both password secrets. Set the environment variable `ANDROID_KEY_ALIAS` to `timeandate-sideload` or the alias you chose.
+
+   ```sh
+   base64 < /path/to/timeandate-sideload.p12 | tr -d '\n' | \
+     gh secret set ANDROID_KEYSTORE_BASE64 --env mobile-sideload
+   ```
+
+3. Download the `timeandate-android-release-<commit>` artifact and extract `timeandate-android-release.apk`. Share the APK with testers or install it with `adb install -r timeandate-android-release.apk`. Updates require the same signing key. If the phone already has a debug or Play build signed with a different key, uninstalling it before installing this APK clears that app's local data.
+
+The signed APK is a workflow artifact. GitHub Releases continue to carry the debug QA APKs described above.
+
+## Run on your own iPhone with a free Apple account
+
+Add your Apple account in Xcode, connect your iPhone, then run `npm run mobile:sync -- ios` and `npm run mobile:ios`. In the App target's **Signing & Capabilities**, enable automatic signing and select your **Personal Team**. Use a unique bundle identifier if Xcode cannot register the existing one. Select the connected iPhone and choose **Run**. Enable Developer Mode on the device if prompted. Personal Team builds expire and can be refreshed from Xcode. Use the Apple Developer Program and TestFlight to distribute to other testers. [Apple membership comparison](https://developer.apple.com/support/compare-memberships/)
 
 ## Build signed apps for store QA and production
 
@@ -94,7 +120,7 @@ The separate Timers Dev target has a development ID. Building it for either stor
 | `IOS_PROVISIONING_PROFILE_BASE64` | Environment secret | Base64-encoded App Store distribution `.mobileprovision` for the app and signing team |
 | `IOS_TEAM_ID` | Environment variable | Apple Developer team ID |
 
-Use the upload key registered to the Play app. For iOS, export the certificate together with its private key from Keychain Access and obtain the matching App Store distribution profile from the Apple Developer portal. An App Store profile and certificate permit the same build to go through TestFlight and App Review. Keep all signing files and encoded values outside the repository. [GitHub’s Apple signing guide](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)
+Use the upload key registered to the Play app in the store environments. Google Play takes the signed `.aab` and signs the APKs it distributes with the Play app signing key. Keep the sideload key in `mobile-sideload`. For iOS, export the certificate together with its private key from Keychain Access and obtain the matching App Store distribution profile from the Apple Developer portal. An App Store profile and certificate permit the same build to go through TestFlight and App Review. Keep all signing files and encoded values outside the repository. [GitHub’s Apple signing guide](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)
 
 If you use the GitHub CLI, run these commands from the repository after creating the environment. Substitute the actual local file paths. Repeat for `mobile-production` using its signing inputs.
 

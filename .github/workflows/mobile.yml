@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: App to package for debug QA
+        description: App to package for Android debug and iOS Release Simulator QA
         type: choice
         options: [timeandate, timers-dev]
         default: timeandate
@@ -76,10 +76,10 @@ jobs:
       - name: Build for iOS Simulator
         run: |
           xcodebuild -project "$NATIVE_ROOT/ios/App/App.xcodeproj" -scheme App -sdk iphonesimulator \
-            -configuration Debug -derivedDataPath ios-build CODE_SIGNING_ALLOWED=NO build
-          ditto -c -k --keepParent ios-build/Build/Products/Debug-iphonesimulator/App.app timeandate-ios-simulator.zip
+            -configuration Release -derivedDataPath ios-build CODE_SIGNING_ALLOWED=NO build
+          ditto -c -k --keepParent ios-build/Build/Products/Release-iphonesimulator/App.app ios-simulator-release.zip
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.target }}-ios-simulator
-          path: timeandate-ios-simulator.zip
+          name: ${{ matrix.target }}-ios-simulator-release
+          path: ios-simulator-release.zip
           if-no-files-found: error
