@@ -105,7 +105,7 @@ function boardId(record) {
 
 export const dashboardPath = "/dashboard";
 const addPath = dashboardPath + "/add";
-const historyPath = dashboardPath + "/history";
+export const historyPath = dashboardPath + "/history";
 const editPath = dashboardPath + "/edit/";
 
 function boardUrl(id, path = dashboardPath) {
@@ -113,7 +113,6 @@ function boardUrl(id, path = dashboardPath) {
 }
 
 const penIcon = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 6 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11L4 20z"/></svg>';
-const removeIcon = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>';
 
 function canEdit(type, status) {
   return !status.startsWith("Running") && !(type === "interval" && status.startsWith("Paused"));
@@ -140,7 +139,7 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
         ${definition.fields}
         <p class="dashboard-error" role="alert" hidden></p>
         <div class="dashboard-actions">
-          <a href="${home}" data-route>Cancel</a>
+          <a href="${home}" data-route ${record ? "" : 'data-dashboard-focus="add"'}>Cancel</a>
           <button type="submit">${record ? "Save changes" : "Add"}</button>
         </div>
         ${supportsPresets ? `<div class="dashboard-actions">
@@ -265,7 +264,7 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
       data.cards[key] = { ...current, dashboardId, type, name, value, created: record?.created ?? now };
       return true;
     });
-    if (saved && form.isConnected) navigate(home, true);
+    if (saved && form.isConnected) navigate(home, true, editKey ? undefined : key);
     else error.hidden = false;
   };
   return { redraw() {}, unmount() {
@@ -274,13 +273,19 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
   } };
 }
 
-export function mountDashboard(root, { path, requestedBoard, interval, linkedTimers, navigate }) {
+export function mountDashboard(root, { path, requestedBoard, interval, linkedTimers, navigate, focusTarget }) {
   const viewingHistory = path === historyPath;
   if (requestedBoard !== null && !dashboards.boards.some(board => board.id === requestedBoard)) {
     navigate(viewingHistory ? historyPath : dashboardPath, true);
     return;
   }
   activeId = requestedBoard ?? dashboards.defaultId;
+  function updateHistoryLink() {
+    document.querySelector(".dashboard-history-tab").href = viewingHistory
+      ? location.pathname + location.search
+      : boardUrl(activeId, historyPath);
+  }
+  updateHistoryLink();
   const types = { date: dateCountdown, duration: dashboardCountdown, interval: dashboardSessionInterval, clock: worldClock };
   function savedDefinition(record) {
     if (record.type === "interval" && interval && !types.interval.valid(record.value) && interval.valid(record.value)) return interval;
@@ -304,12 +309,27 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
   }
 
   root.innerHTML = `
-    <div class="dashboard-switcher">
-      <div class="dashboard-tabs" role="group" aria-label="Choose dashboard"></div>
-      <button type="button" class="dashboard-new secondary" aria-label="Add dashboard">+</button>
-      <a class="dashboard-history-tab" data-route>History</a>
+    <div class="dashboard-switcher" ${viewingHistory ? "hidden" : ""}>
+      <div class="dashboard-tabs" role="group" aria-label="Dashboards"></div>
+      <details class="dashboard-board-picker">
+        <summary>Switch dashboard</summary>
+        <div class="dashboard-board-links"></div>
+      </details>
+      <button type="button" class="dashboard-options secondary">Dashboard options</button>
     </div>
-    <dialog class="dashboard-create" aria-labelledby="dashboard-create-title">
+    <dialog class="dashboard-create dashboard-settings" aria-labelledby="dashboard-settings-title">
+      <div class="dashboard-form">
+        <h2 id="dashboard-settings-title">Dashboard options</h2>
+        <p class="dashboard-settings-name"></p>
+        <label class="dashboard-checkbox"><input type="checkbox" class="dashboard-sound"> Timer sound</label>
+        <button type="button" class="dashboard-default secondary"></button>
+        <button type="button" class="dashboard-rename secondary">Rename dashboard</button>
+        <button type="button" class="dashboard-new secondary">Add dashboard</button>
+        <button type="button" class="dashboard-delete secondary">Remove dashboard</button>
+        <div class="dashboard-actions"><button type="button" class="dashboard-settings-close secondary">Close</button></div>
+      </div>
+    </dialog>
+    <dialog class="dashboard-create dashboard-editor" aria-labelledby="dashboard-create-title">
       <form class="dashboard-form">
         <h2 id="dashboard-create-title">Add dashboard</h2>
         <label class="field">Dashboard name <input name="name" maxlength="80" required autofocus></label>
@@ -321,10 +341,9 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
     </dialog>
     <header class="intro dashboard-heading">
       <h1 tabindex="-1"></h1>
-      <div class="dashboard-heading-controls" ${viewingHistory ? "hidden" : ""}>
-        <button type="button" class="dashboard-icon dashboard-rename secondary" aria-label="Rename dashboard" title="Rename dashboard">${penIcon}</button>
-        <a href="${boardUrl(activeId, addPath)}" class="dashboard-add" aria-label="Add timer or clock" data-route>+</a>
-      </div>
+      ${viewingHistory
+        ? '<a class="dashboard-return" data-route>Back to dashboard</a>'
+        : `<a href="${boardUrl(activeId, addPath)}" class="dashboard-add" data-route>Add timer or clock</a>`}
     </header>
     ${persistenceNotice}
     <dialog class="dashboard-create dashboard-removal-block" aria-labelledby="dashboard-removal-title">
@@ -338,12 +357,8 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
       </div>
     </dialog>
     <section class="dashboard-board-view" ${viewingHistory ? "hidden" : ""}>
-    <div class="dashboard-actions dashboard-preferences">
-      <button type="button" class="secondary dashboard-default"></button>
-      <label class="dashboard-checkbox"><input type="checkbox" class="dashboard-sound"> Timer sound</label>
-    </div>
     <p class="dashboard-announcement" role="status"></p>
-    <p class="dashboard-empty">Use the + beside the dashboard name to add a timer or clock.</p>
+    <p class="dashboard-empty">Add a timer for a duration, a routine, or a date. You can also add a world clock.</p>
     <section class="dashboard-grid" aria-label="Saved timers and clocks"></section>
     </section>
     <section class="dashboard-history" aria-label="Timer history" ${viewingHistory ? "" : "hidden"}>
@@ -358,17 +373,21 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
   const empty = root.querySelector(".dashboard-empty");
   const cards = new Map();
   const tabs = root.querySelector(".dashboard-tabs");
-  const historyTab = root.querySelector(".dashboard-history-tab");
+  const boardPicker = root.querySelector(".dashboard-board-picker");
+  const boardLinks = boardPicker.querySelector(".dashboard-board-links");
+  const returnLink = root.querySelector(".dashboard-return");
+  const settings = root.querySelector(".dashboard-settings");
+  const options = root.querySelector(".dashboard-options");
+  const deleteBoard = root.querySelector(".dashboard-delete");
   const filter = root.querySelector(".dashboard-history-filter input");
   if (viewingHistory) {
-    historyTab.setAttribute("aria-current", "page");
     filter.oninput = renderHistory;
   }
   const heading = root.querySelector("h1");
   const defaultButton = root.querySelector(".dashboard-default");
   const sound = root.querySelector(".dashboard-sound");
   const announcement = root.querySelector(".dashboard-announcement");
-  const create = root.querySelector(".dashboard-create");
+  const create = root.querySelector(".dashboard-editor");
   const createForm = create.querySelector("form");
   const nameInput = createForm.elements.name;
   let wasVisible = false;
@@ -400,11 +419,25 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
     create.showModal();
   }
 
-  root.querySelector(".dashboard-new").onclick = () => openDashboardDialog();
+  options.onclick = () => settings.showModal();
+  root.querySelector(".dashboard-settings-close").onclick = () => settings.close();
+  boardPicker.onkeydown = event => {
+    if (event.key !== "Escape" || !boardPicker.open) return;
+    boardPicker.open = false;
+    boardPicker.querySelector("summary").focus();
+  };
+  root.querySelector(".dashboard-new").onclick = () => {
+    settings.close();
+    openDashboardDialog();
+  };
   root.querySelector(".dashboard-rename").onclick = () => {
+    settings.close();
     openDashboardDialog(dashboards.boards.find(board => board.id === activeId));
   };
   root.querySelector(".dashboard-cancel").onclick = () => create.close();
+  create.addEventListener("close", () => {
+    if (create.isConnected) options.focus();
+  });
   nameInput.oninput = () => nameInput.setCustomValidity("");
   createForm.onsubmit = async event => {
     event.preventDefault();
@@ -456,71 +489,74 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
     sound.checked = dashboards.boards.find(board => board.id === activeId).sound === true;
   }
 
-  function refreshDashboard(focusTab = false) {
+  deleteBoard.onclick = async () => {
+    const board = dashboards.boards.find(board => board.id === activeId);
+    if (!board || dashboards.boards.length === 1) return;
+    const boardCards = data => Object.keys(data.cards).filter(key => boardId(data.cards[key]) === board.id);
+    let blocked = unfinishedCards(localData, boardCards(localData), Date.now());
+    if (blocked.length) {
+      settings.close();
+      showRemovalBlock(board.id, blocked, true);
+      return;
+    }
+    if (!window.confirm(`Remove “${board.name}” and its timers and clocks? Past runs stay in History.`)) return;
+    const removed = await repository.change(data => {
+      const boards = data.dashboards.boards;
+      const index = boards.findIndex(item => item.id === board.id);
+      if (index < 0 || boards.length === 1) return false;
+      const now = Date.now();
+      const keys = boardCards(data);
+      blocked = unfinishedCards(data, keys, now);
+      if (blocked.length) return false;
+      checkpointSessions(data, now);
+      for (const entry of data.history) {
+        if (entry.dashboardId === board.id) entry.dashboardName = boards[index].name;
+      }
+      boards.splice(index, 1);
+      if (data.dashboards.defaultId === board.id) {
+        data.dashboards.defaultId = boards[Math.min(index, boards.length - 1)].id;
+      }
+      for (const key of keys) delete data.cards[key];
+      return true;
+    });
+    if (!settings.isConnected) return;
+    if (blocked.length || removed) settings.close();
+    if (blocked.length) showRemovalBlock(board.id, blocked, true);
+  };
+
+  function refreshDashboard() {
     if (!dashboards.boards.some(board => board.id === activeId)) activeId = dashboards.defaultId;
     const active = dashboards.boards.find(board => board.id === activeId);
     heading.textContent = viewingHistory ? "Timer history" : active.name;
     document.title = `${heading.textContent} · Time And Date`;
-    historyTab.href = boardUrl(activeId, historyPath);
+    updateHistoryLink();
+    if (viewingHistory) {
+      returnLink.href = boardUrl(activeId);
+      return;
+    }
     add.href = boardUrl(activeId, addPath);
     updatePreferences();
-    tabs.replaceChildren();
-    for (const board of dashboards.boards) {
-      const tab = document.createElement("div");
-      tab.className = "dashboard-tab";
-      const select = document.createElement("a");
-      select.href = boardUrl(board.id);
-      select.dataset.route = "";
-      select.textContent = board.name;
-      if (!viewingHistory && board.id === activeId) select.setAttribute("aria-current", "page");
-      if (board.sound) select.onclick = unlockTone;
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "secondary dashboard-tab-remove";
-      remove.textContent = "×";
-      remove.setAttribute("aria-label", `Remove dashboard ${board.name}`);
-      remove.disabled = dashboards.boards.length === 1;
-      remove.onclick = async () => {
-        const boardCards = data => Object.keys(data.cards).filter(key => boardId(data.cards[key]) === board.id);
-        let blocked = unfinishedCards(localData, boardCards(localData), Date.now());
-        if (blocked.length) {
-          showRemovalBlock(board.id, blocked, true);
-          return;
-        }
-        if (!window.confirm(`Remove “${board.name}” and its timers and clocks? Past runs stay in History.`)) return;
-        const wasActive = activeId === board.id;
-        let replacement;
-        const removed = await repository.change(data => {
-          const boards = data.dashboards.boards;
-          const index = boards.findIndex(item => item.id === board.id);
-          if (index < 0 || boards.length === 1) return false;
-          const now = Date.now();
-          const keys = boardCards(data);
-          blocked = unfinishedCards(data, keys, now);
-          if (blocked.length) return false;
-          checkpointSessions(data, now);
-          for (const entry of data.history) {
-            if (entry.dashboardId === board.id) entry.dashboardName = boards[index].name;
-          }
-          boards.splice(index, 1);
-          replacement = boards[Math.min(index, boards.length - 1)].id;
-          if (data.dashboards.defaultId === board.id) data.dashboards.defaultId = replacement;
-          for (const key of keys) delete data.cards[key];
-          return true;
-        });
-        if (blocked.length) showRemovalBlock(board.id, blocked, true);
-        if (removed && root.contains(heading)) {
-          if (wasActive) navigate(boardUrl(replacement, viewingHistory ? historyPath : dashboardPath), true);
-          else refreshDashboard(true);
-        }
-      };
-      tab.append(select, remove);
-      tabs.append(tab);
+    settings.querySelector(".dashboard-settings-name").textContent = active.name;
+    deleteBoard.disabled = dashboards.boards.length === 1;
+    const focusedLink = document.activeElement;
+    for (const group of [tabs, boardLinks]) {
+      const focusedBoard = group.contains(focusedLink) && focusedLink.dataset.boardId;
+      group.replaceChildren();
+      for (const board of dashboards.boards) {
+        const link = document.createElement("a");
+        link.href = boardUrl(board.id);
+        link.dataset.route = "";
+        link.dataset.boardId = board.id;
+        link.textContent = board.name;
+        if (board.id === activeId) link.setAttribute("aria-current", "page");
+        if (board.sound) link.onclick = unlockTone;
+        group.append(link);
+        if (board.id === focusedBoard) link.focus({ preventScroll: true });
+      }
     }
-    const selected = viewingHistory ? historyTab : tabs.querySelector('[aria-current="page"]');
-    selected.scrollIntoView({ block: "nearest", inline: "nearest" });
-    if (focusTab) selected.focus({ preventScroll: true });
-    refresh();
+    boardPicker.hidden = dashboards.boards.length === 1;
+    tabs.hidden = boardPicker.hidden || dashboards.boards.length > 3 ||
+      dashboards.boards.some(board => board.name.length > 24);
   }
 
   function addCard(key, record, path, definition = savedDefinition(record)) {
@@ -529,9 +565,10 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
     const zone = isClock ? record.value.zone.replaceAll("_", " ") : "";
     const card = document.createElement("article");
     card.className = "card dashboard-card";
+    if (!path) card.dataset.cardKey = key;
     card.innerHTML = `
       <div class="dashboard-card-heading">
-        <h2></h2>
+        <h2 tabindex="-1"></h2>
         <div class="dashboard-card-controls">
         ${isClock ? "" : `<button type="button" class="secondary dashboard-icon dashboard-mute">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
@@ -542,15 +579,22 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
           </svg>
         </button>`}
         ${!path && definition.toggle ? `<a class="dashboard-icon dashboard-edit" data-route>${penIcon}</a>` : ""}
-        ${!path ? `<button type="button" class="secondary dashboard-icon dashboard-remove">${removeIcon}</button>` : ""}
+        ${!path ? `<details class="dashboard-card-options">
+          <summary class="dashboard-icon" aria-label="Timer or clock options" title="Options">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
+            </svg>
+          </summary>
+          <button type="button" class="secondary dashboard-remove">Remove</button>
+        </details>` : ""}
         </div>
       </div>
-      <p class="dashboard-detail"></p>
       ${isClock
         ? '<time class="dashboard-clock"></time>'
         : '<p class="dashboard-clock" role="timer" aria-label="Time remaining"></p>'}
       <p class="dashboard-status"></p>
-      <div class="dashboard-actions"></div>`;
+      <div class="dashboard-actions"></div>
+      <p class="dashboard-detail"></p>`;
     const title = card.querySelector("h2");
     const detail = card.querySelector(".dashboard-detail");
     const clock = card.querySelector(".dashboard-clock");
@@ -617,6 +661,8 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
 
       if (definition.toggle) {
         toggle = timerButton("Play", definition.toggle);
+        toggle.classList.remove("secondary");
+        toggle.classList.add("dashboard-primary");
         if (definition.reset) reset = timerButton("Reset", definition.reset);
         for (const [action, label] of Object.entries(definition.commands ?? {})) {
           const button = timerButton(label, (value, now) => definition.command(value, action, now));
@@ -629,12 +675,22 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
         edit.title = `Edit ${label}`;
       }
       const remove = card.querySelector(".dashboard-remove");
+      const cardOptions = card.querySelector(".dashboard-card-options");
+      const optionsSummary = cardOptions.querySelector("summary");
+      optionsSummary.setAttribute("aria-label", `Options for ${label}`);
+      cardOptions.onkeydown = event => {
+        if (event.key !== "Escape" || !cardOptions.open) return;
+        cardOptions.open = false;
+        optionsSummary.focus();
+      };
       remove.setAttribute("aria-label", `Remove ${label}`);
       remove.title = `Remove ${label}`;
       remove.onclick = async () => {
         const id = boardId(record);
         let blocked = unfinishedCards(localData, [key], Date.now());
         if (blocked.length) {
+          cardOptions.open = false;
+          optionsSummary.focus();
           showRemovalBlock(id, blocked, false);
           return;
         }
@@ -649,7 +705,11 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
           delete data.cards[key];
           return true;
         });
-        if (blocked.length) showRemovalBlock(id, blocked, false);
+        if (blocked.length) {
+          cardOptions.open = false;
+          optionsSummary.focus();
+          showRemovalBlock(id, blocked, false);
+        }
         if (removed) add.focus();
       };
     }
@@ -780,24 +840,30 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
     const { previous, commandKey } = event.detail;
     showPersistenceStatus(root);
     const dashboardsChanged = JSON.stringify(previous.dashboards) !== JSON.stringify(dashboards);
+    const priorActive = activeId;
     if (dashboardsChanged) {
       if (requestedBoard !== null && !dashboards.boards.some(board => board.id === requestedBoard)) {
         navigate(viewingHistory ? historyPath : dashboardPath, true);
         return;
       }
       refreshDashboard();
-    } else {
-      const keys = Object.keys(localData.cards);
-      const structuralChange = keys.length !== Object.keys(previous.cards).length || keys.some(key => {
-        const card = localData.cards[key];
-        const old = previous.cards[key];
-        return !old || card.name !== old.name || card.type !== old.type || card.dashboardId !== old.dashboardId ||
-          (card.type === "clock" && JSON.stringify(card.value) !== JSON.stringify(old.value));
-      });
-      if (structuralChange) refresh();
-      else redraw(commandKey);
     }
-    if (viewingHistory && (dashboardsChanged || JSON.stringify(previous.history) !== JSON.stringify(localData.history))) renderHistory();
+    if (viewingHistory) {
+      if (dashboardsChanged || JSON.stringify(previous.history) !== JSON.stringify(localData.history)) renderHistory();
+      return;
+    }
+    const keys = Object.keys(localData.cards).filter(key => boardId(localData.cards[key]) === activeId);
+    const oldKeys = Object.keys(previous.cards).filter(key => boardId(previous.cards[key]) === activeId);
+    const linkedBoard = boards => boards.find(board => board.id === originalId)?.id ?? boards[0].id;
+    const structuralChange = keys.length !== oldKeys.length || keys.some(key => {
+      const card = localData.cards[key];
+      const old = previous.cards[key];
+      return !old || card.name !== old.name || card.type !== old.type || card.dashboardId !== old.dashboardId ||
+        (card.type === "clock" && JSON.stringify(card.value) !== JSON.stringify(old.value));
+    });
+    if (priorActive !== activeId || structuralChange ||
+        linkedBoard(previous.dashboards.boards) !== linkedBoard(dashboards.boards)) refresh();
+    else redraw(commandKey);
   }
 
   function onStorage(event) {
@@ -819,9 +885,15 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
   window.addEventListener("dashboarddata", onData);
   document.addEventListener("visibilitychange", resetAnnouncements, true);
   refreshDashboard();
+  refresh();
   renderHistory();
   showPersistenceStatus(root);
-  heading.focus({ preventScroll: true });
+  const newCard = focusTarget && [...grid.children].find(card => card.dataset.cardKey === focusTarget);
+  if (newCard) {
+    newCard.scrollIntoView({ block: "nearest" });
+    (newCard.querySelector(".dashboard-primary") ?? newCard.querySelector("h2"))?.focus({ preventScroll: true });
+  } else if (focusTarget === "add") add?.focus();
+  else heading.focus({ preventScroll: true });
   return {
     redraw,
     unmount() {

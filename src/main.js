@@ -1,5 +1,5 @@
 import "./style.css";
-import { dashboardPath, dashboardReady, mountDashboard } from "./dashboard.js";
+import { dashboardPath, dashboardReady, historyPath, mountDashboard } from "./dashboard.js";
 import { cities, citiesByTimeZone, cityIds, clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
 import {
   durationDisplay,
@@ -31,9 +31,9 @@ function saveTimer(key, value) {
   }
 }
 
-function changeUrl(url, replace = false) {
+function changeUrl(url, replace = false, focusTarget) {
   history[replace ? "replaceState" : "pushState"](null, "", url);
-  render();
+  render(focusTarget);
 }
 
 document.addEventListener("click", event => {
@@ -45,7 +45,9 @@ document.addEventListener("click", event => {
   const route = link.pathname === "/clocks" && lastBoard
     ? lastBoard
     : link.pathname + link.search + link.hash;
-  if (route !== location.pathname + location.search + location.hash) changeUrl(route);
+  if (route !== location.pathname + location.search + location.hash) {
+    changeUrl(route, false, link.dataset.dashboardFocus);
+  }
 });
 
 let lastBoard = "";
@@ -326,7 +328,7 @@ function renderTimers() {
   };
 }
 
-function render() {
+function render(focusTarget) {
   const version = ++renderVersion;
   unmountView?.();
   unmountView = undefined;
@@ -345,7 +347,7 @@ function render() {
   }
 
   const isCountdown = path === countdownPath || path === "/duration";
-  const activePath = isDashboard ? dashboardPath : isCountdown ? countdownPath : "/clocks";
+  const activePath = path === historyPath ? historyPath : isDashboard ? dashboardPath : isCountdown ? countdownPath : "/clocks";
   for (const link of links) {
     if (link.pathname === activePath) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
@@ -356,6 +358,7 @@ function render() {
       if (version !== renderVersion) return;
       const dashboard = mountDashboard(app, {
         path,
+        focusTarget,
         requestedBoard: params().get("board"),
         interval,
         linkedTimers,
@@ -409,7 +412,7 @@ if (!__NATIVE_BUILD__) {
     if (event.key === null || event.key === durationKey) durationTimer = readTimer(durationKey, isDurationTimer, event.newValue);
   });
 }
-window.addEventListener("popstate", render);
+window.addEventListener("popstate", () => render());
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) redraw();
 });
