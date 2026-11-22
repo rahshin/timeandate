@@ -603,7 +603,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         ? '<time class="dashboard-clock"></time>'
         : '<p class="dashboard-clock" role="timer" aria-label="Time remaining"></p>'}
       <p class="dashboard-status"></p>
-      ${isClock ? '<label class="dashboard-clock-seconds"><input type="checkbox"> Show seconds</label>' : ""}
+      ${isClock ? '<label class="dashboard-clock-seconds"><input type="checkbox"> Seconds</label>' : ""}
       <div class="dashboard-actions"></div>
       <p class="dashboard-detail"></p>`;
     const title = card.querySelector("h2");
