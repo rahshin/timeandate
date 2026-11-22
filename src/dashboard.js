@@ -4,6 +4,7 @@ import { Temporal } from "@js-temporal/polyfill";
 import { playTone, unlockTone } from "./timeandate/audio.js";
 import { clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
 import { createForegroundCues, createWakeController } from "./foreground-cues.js";
+import { hasForegroundCues } from "./foreground-cue-policy.js";
 import { foregroundPlatform } from "./foreground-platform.js";
 import { advanceSession } from "./timer-session.js";
 import { durationDisplay } from "./duration.js";
@@ -761,7 +762,10 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         for (const [action, button] of commandButtons) button.hidden = !view.available.includes(action);
         if (!path && (focused === edit || focused?.parentElement === actions) && focused.hidden) toggle.focus();
       }
-      if (announce && changed) return { text: `${label}. ${view.status}.`, audible: !muted };
+      if (announce && changed) return {
+        text: `${label}. ${view.status}.`,
+        audible: !muted && !current.value.config?.finalSecondsEnabled,
+      };
     });
     grid.append(card);
   }
@@ -905,7 +909,6 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
   function onData(event) {
     const { previous, commandKey } = event.detail;
     showPersistenceStatus(root);
-    updateForeground();
     const dashboardsChanged = JSON.stringify(previous.dashboards) !== JSON.stringify(dashboards);
     const priorActive = activeId;
     if (dashboardsChanged) {
@@ -919,6 +922,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       if (dashboardsChanged || JSON.stringify(previous.history) !== JSON.stringify(localData.history)) renderHistory();
       return;
     }
+    updateForeground();
     const keys = Object.keys(localData.cards).filter(key => boardId(localData.cards[key]) === activeId);
     const oldKeys = Object.keys(previous.cards).filter(key => boardId(previous.cards[key]) === activeId);
     const linkedBoard = boards => boards.find(board => board.id === originalId)?.id ?? boards[0].id;
@@ -939,7 +943,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
 
   const cues = createForegroundCues({
     speech: platform.speech,
-    tone: () => { if (!sound.checked) playTone(); },
+    tone: playTone,
   });
   let cueBoard;
 
@@ -959,7 +963,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       if (!definition || boardId(record) !== activeId || !record.value?.config) continue;
       const config = record.value.config;
       if (config.keepAwake && advanceSession(record.value, now).status === "running") awake = true;
-      if (config.speakCompletion || config.preparationMs || config.finalSecondsEnabled) {
+      if (hasForegroundCues(config)) {
         rows.push({ key, label: record.name || definition.name,
           muted: record.muted === true, session: record.value });
       }

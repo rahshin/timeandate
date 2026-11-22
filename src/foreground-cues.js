@@ -1,47 +1,24 @@
 import { advanceSession } from "./timer-session.js";
+import { cueStillApplies, foregroundCue } from "./foreground-cue-policy.js";
 
-const completionWindow = 2000;
 const speechTimeout = 8000;
 
-function countdownCue(session, label, now) {
-  if (session.status !== "running") return;
-  const { phase, config, endAt } = session;
-  const seconds = Math.ceil((endAt - now) / 1000);
-  const preparation = phase === "preparation";
-  const finalSeconds = phase === "activity" && config.finalSecondsEnabled &&
-    seconds <= config.finalSeconds && seconds * 1000 < config.durationMs;
-  if (!preparation && !finalSeconds) return;
-  return {
-    id: `${session.runId}/${phase}/${endAt}/${seconds}`,
-    text: preparation && seconds === 3 ? `${label}, starting in 3` : String(seconds),
-    due: endAt - seconds * 1000,
-    expires: endAt - (seconds - 1) * 1000,
-  };
-}
-
-function nextCueAt(session, now) {
-  if (session.status !== "running") return Infinity;
-  const { phase, config, endAt } = session;
-  if (phase === "preparation") return now;
-  if (phase === "activity") {
-    if (config.finalSecondsEnabled) return Math.max(now, endAt - Math.min(config.finalSeconds * 1000, config.durationMs - 1000));
-    if (config.speakCompletion) return endAt;
-  }
-  if (phase === "break" && (config.preparationMs || config.speakCompletion || config.finalSecondsEnabled)) return endAt;
-  return Infinity;
+function compareCues(a, b) {
+  return b.priority - a.priority || a.due - b.due || a.phaseEnd - b.phaseEnd ||
+    a.key.localeCompare(b.key);
 }
 
 export function createForegroundCues({ speech, tone }) {
   let previous = new Map();
-  let seen = new Map();
-  let pending = new Map();
+  const seen = new Map();
+  const pending = new Map();
   let current;
-  let sequence = 0;
+  let lastSpokenKey;
 
   function cancel() {
     if (!current) return;
     current = undefined;
-    speech?.stop();
+    speech.stop();
   }
 
   function clear() {
@@ -49,75 +26,67 @@ export function createForegroundCues({ speech, tone }) {
     pending.clear();
     previous.clear();
     seen.clear();
+    lastSpokenKey = undefined;
   }
 
   function update(rows, now) {
     const next = new Map();
-    const options = [];
+    let signalDue = false;
     for (const row of rows) {
       const session = advanceSession(row.session, now);
-      next.set(row.key, session);
-      const { config } = session;
-      if (row.muted || !(config.speakCompletion || config.preparationMs || config.finalSecondsEnabled)) continue;
+      next.set(row.key, { ...row, session });
       const before = previous.get(row.key);
-      const finished = session.status === "complete" && before && before.status !== "complete" && before.status !== "stopped";
-      const repeated = before?.status === "running" && before.phase === "activity" &&
-        before.completed < session.completed;
-      const at = finished ? session.endedAt : before?.endAt;
-      const ended = before?.runId === session.runId && (finished || repeated) &&
-        Number.isFinite(at) && now < at + completionWindow;
-      const completion = ended && config.speakCompletion;
-      const signal = ended && repeated && config.finalSecondsEnabled;
-      const scheduled = nextCueAt(session, now);
-      const held = current?.key === row.key && current.priority ? current : pending.get(row.key);
-      const holdingCompletion = held?.priority && session.runId === held.runId &&
-        (held === current || held.expires > now);
-      if (!(completion || signal || holdingCompletion || Number.isFinite(scheduled))) continue;
-      const event = completion ? {
-        id: `${session.runId}/complete/${at}`, priority: 1, due: at, expires: at + completionWindow,
-        text: finished ? `${row.label} complete` : `${row.label}, repetition ${before.cycle} complete`,
-      } : countdownCue(session, row.label, now);
-      options.push({
-        ...row, session, event, signal,
-        priority: completion || holdingCompletion ? 1 : 0,
-        scheduled: completion || signal ? at : holdingCompletion ? held.due : scheduled,
-      });
-    }
-    previous = next;
-    options.sort((a, b) => b.priority - a.priority || a.scheduled - b.scheduled);
-    const eligible = new Map(options.slice(0, 2).map(row => [row.key, row]));
-    const available = row => row && row.session.status !== "paused" && row.session.status !== "stopped";
-    for (const [key, cue] of pending) {
-      const row = eligible.get(key);
-      if (!available(row) || row.session.runId !== cue.runId || cue.expires <= now ||
-          (!cue.priority && row.event?.id !== cue.id)) pending.delete(key);
-    }
-    // An ended timer retains eligibility while its completion is in the queue or playing.
-    const stillAllowed = cue => {
-      const row = eligible.get(cue.key);
-      return available(row) && row.session.runId === cue.runId &&
-        (cue.priority || (row.session.status === "running" && row.session.endAt === cue.phaseEnd));
-    };
-    if (current && (!stillAllowed(current) || now >= current.started + speechTimeout)) cancel();
-    for (const row of eligible.values()) {
-      if (row.signal) tone();
-      if (!row.event || seen.get(row.key) === row.event.id) continue;
-      seen.set(row.key, row.event.id);
-      if (speech && (row.event.priority || !pending.get(row.key)?.priority)) {
-        pending.set(row.key, { ...row.event, key: row.key, runId: row.session.runId, phaseEnd: row.session.endAt });
+      if (row.muted) continue;
+      const { event, following, signal } = foregroundCue(
+        before?.muted ? undefined : before?.session, session, row.label, now);
+      signalDue ||= signal;
+      if (!speech) continue;
+      for (const candidate of [event, following]) {
+        if (!candidate) continue;
+        const slot = JSON.stringify([row.key, Boolean(candidate.phase)]);
+        const cue = { ...candidate, slot, key: row.key, runId: session.runId, phaseEnd: session.endAt ?? Infinity };
+        const spoken = seen.get(slot);
+        const held = pending.get(slot);
+        if (spoken?.runId === cue.runId && spoken.id === cue.id) continue;
+        if (!held || held.expires <= now || !cueStillApplies(held, next.get(row.key)) ||
+            cue.priority >= held.priority) pending.set(slot, cue);
       }
     }
-    for (const key of seen.keys()) if (!next.has(key)) seen.delete(key);
-    const cue = [...pending.values()].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0) || a.due - b.due)[0];
-    if (!cue || (current && (!cue.priority || current.priority))) return;
+    previous = next;
+
+    for (const [slot, cue] of pending) {
+      if (cue.expires <= now || !cueStillApplies(cue, next.get(cue.key))) pending.delete(slot);
+    }
+    for (const [slot, cue] of seen) if (!next.has(cue.key)) seen.delete(slot);
+    if (current && (!cueStillApplies(current, next.get(current.key)) ||
+        now >= current.started + speechTimeout)) cancel();
+
+    // Only due cues compete for the two speech slots. A valid utterance keeps
+    // its slot until a higher-priority candidate interrupts it.
+    const ranked = [...pending.values()].sort(compareCues);
+    const preempt = current && ranked[0]?.priority > current.priority;
+    const eligible = new Set(current && !preempt ? [current.key] : []);
+    for (const cue of ranked) {
+      if (eligible.size < 2 || eligible.has(cue.key)) eligible.add(cue.key);
+      else pending.delete(cue.slot);
+    }
+    if (signalDue) tone();
+    const cue = ranked[0];
+    if (!cue || (current && !preempt)) return;
+
     cancel();
-    pending.delete(cue.key);
-    const token = ++sequence;
-    current = { ...cue, started: now, token };
+    pending.delete(cue.slot);
+    seen.set(cue.slot, cue);
+    const playback = { ...cue, started: now };
+    current = playback;
     Promise.resolve().then(() => {
-      if (current?.token === token) return speech.play(cue.text, cue.expires);
+      if (current !== playback) return;
+      const text = lastSpokenKey !== undefined && lastSpokenKey !== cue.key
+        ? cue.namedText ?? cue.text : cue.text;
+      lastSpokenKey = cue.key;
+      return speech.play(text, cue.expires);
     }).catch(() => {}).finally(() => {
-      if (current?.token === token) current = undefined;
+      if (current === playback) current = undefined;
     });
   }
 

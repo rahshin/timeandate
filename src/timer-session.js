@@ -8,7 +8,7 @@ export const MAX_FINAL_SECONDS = 999 * 60 + 59;
 export function createTimerSession({
   durationMs, repetitions = 1, restMs = 2000, preparation = false,
   finalSecondsEnabled = false, finalSeconds = DEFAULT_FINAL_SECONDS, kind = "countdown",
-  speakCompletion = false, keepAwake = false,
+  speakCompletion = false, speakPhases = false, keepAwake = false,
 }) {
   if (!Number.isSafeInteger(durationMs) || durationMs <= 0 ||
       !Number.isSafeInteger(repetitions) || repetitions <= 0 ||
@@ -26,6 +26,7 @@ export function createTimerSession({
     }
     : { kind: "countdown", durationMs, repetitions: 1, restMs: 0, preparationMs: 0 };
   if (speakCompletion) config.speakCompletion = true;
+  if (kind === "interval" && speakPhases) config.speakPhases = true;
   if (keepAwake) config.keepAwake = true;
   return ready(config);
 }
@@ -83,8 +84,9 @@ function consumeSlot(session, outcome, at) {
   return nextAttempt({ ...current, cycle: current.cycle + 1 }, at, paused);
 }
 
-export function advanceSession(session, now) {
+export function advanceSession(session, now, onBoundary) {
   while (session.status === "running" && now >= session.endAt) {
+    const before = session;
     const at = session.endAt;
     switch (session.phase) {
       case "activity":
@@ -97,6 +99,7 @@ export function advanceSession(session, now) {
         session = selectPhase(session, "activity", session.config.durationMs, at, false);
         break;
     }
+    onBoundary?.(before, session, at);
   }
   return session;
 }

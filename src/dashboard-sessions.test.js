@@ -37,6 +37,7 @@ test("final-seconds settings survive session commands and reopen for editing", (
     restMinutes: { valueAsNumber: 0 },
     restSeconds: { valueAsNumber: 0 },
     preparation: { checked: true },
+    speakPhases: { checked: true },
     finalSecondsEnabled: { checked: true },
     finalSeconds: { valueAsNumber: 7 },
   };
@@ -47,13 +48,16 @@ test("final-seconds settings survive session commands and reopen for editing", (
   assert.equal(dashboardSessionInterval.valid(saved), true);
   dashboardSessionInterval.init(form, saved);
   assert.equal(form.finalSecondsEnabled.checked, true);
+  assert.equal(form.speakPhases.checked, true);
   assert.equal(form.finalSeconds.value, 7);
 
   delete saved.config.finalSecondsEnabled;
   delete saved.config.finalSeconds;
+  delete saved.config.speakPhases;
   assert.equal(dashboardSessionInterval.valid(saved), true);
   dashboardSessionInterval.init(form, saved);
   assert.equal(form.finalSecondsEnabled.checked, false);
+  assert.equal(form.speakPhases.checked, false);
   assert.equal(form.finalSeconds.value, 10);
 
   form.finalSeconds.valueAsNumber = 0;

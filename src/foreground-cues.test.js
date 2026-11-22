@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createForegroundCues, createWakeController } from "./foreground-cues.js";
-import { createTimerSession, updateSession } from "./timer-session.js";
+import { advanceSession, createTimerSession, updateSession } from "./timer-session.js";
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
@@ -50,7 +50,7 @@ test("short repetitions skip the first second, never speak zero, and chime on na
   }
   cues.update([row], 5000);
   await settle();
-  assert.deepEqual(voice.calls, ["4", "3", "2", "1"]);
+  assert.deepEqual(voice.calls, ["Stretch, 4", "3", "2", "1"]);
   assert.equal(tones, 1);
 });
 
@@ -82,14 +82,14 @@ test("completions preempt numbers and stay serialized across ticks", async () =>
   await settle();
   cues.update(rows, 1620);
   await settle();
-  assert.deepEqual(voice.calls, ["9", "cancelled", "Tea complete"]);
+  assert.deepEqual(voice.calls, ["Interval, 9", "cancelled", "Tea complete"]);
   voice.end();
   await settle();
   cues.update(rows, 1750);
   await settle();
   cues.update(rows, 1850);
   await settle();
-  assert.deepEqual(voice.calls, ["9", "cancelled", "Tea complete", "Break complete"]);
+  assert.deepEqual(voice.calls, ["Interval, 9", "cancelled", "Tea complete", "Break complete"]);
 });
 
 test("only the two nearest timers can speak, and mute, removal and background clear invalidate speech", async () => {
@@ -106,11 +106,11 @@ test("only the two nearest timers can speak, and mute, removal and background cl
   await settle();
   cues.update(rows, 1100);
   await settle();
-  assert.deepEqual(voice.calls, ["3", "4"]);
+  assert.deepEqual(voice.calls, ["One, 3", "Two, 4"]);
   rows[1].muted = true;
   cues.update(rows, 1150);
   await settle();
-  assert.deepEqual(voice.calls, ["3", "4", "cancelled", "5"]);
+  assert.deepEqual(voice.calls, ["One, 3", "Two, 4", "cancelled", "Three, 5"]);
   cues.update(rows.slice(0, 2), 1200);
   await settle();
   assert.equal(voice.calls.at(-1), "cancelled");
@@ -168,4 +168,118 @@ test("an interval names repetition and session completions without announcing a 
   cues.update([stopped], 8000);
   await settle();
   assert.deepEqual(voice.calls, ["Laps, repetition 1 complete", "Laps complete"]);
+});
+
+test("opted-in phase cues cover Start, rest, Skip rest and running Restart, with ordinary Resume quiet", async () => {
+  const voice = fakeSpeech();
+  const cues = createForegroundCues({ speech: voice.speech });
+  const row = {
+    key: "Yoga", label: "Yoga",
+    session: createTimerSession({ kind: "interval", durationMs: 4000, repetitions: 3,
+      restMs: 3000, speakPhases: true }),
+  };
+  const tick = async at => {
+    cues.update([row], at);
+    await settle();
+    voice.end();
+    await settle();
+  };
+  const command = (action, now) => {
+    const before = row.session;
+    row.session = {
+      ...updateSession(before, action, now),
+      runId: "yoga",
+      commandRevision: (before.commandRevision ?? 0) + 1,
+    };
+  };
+  await tick(0);
+  command("start", 1000);
+  await tick(1000);
+  command("pause", 1500);
+  await tick(1500);
+  command("resume", 2000);
+  await tick(2000);
+  await tick(5500);
+  command("skipRest", 6000);
+  await tick(6000);
+  command("restart", 6500);
+  await tick(6500);
+  assert.deepEqual(voice.calls, [
+    "Yoga, start repetition 1", "Yoga, rest", "Yoga, start repetition 2", "Yoga, start repetition 2",
+  ]);
+});
+
+test("checkpoint catch-up uses the latest actual repetition boundary and never rest after the phase ends", async () => {
+  const voice = fakeSpeech();
+  const cues = createForegroundCues({ speech: voice.speech });
+  const row = running("Laps", { kind: "interval", durationMs: 1000, repetitions: 5,
+    restMs: 1000, speakPhases: true, speakCompletion: true });
+  cues.update([row], 100);
+  // The store advances before the cue controller samples, crossing two work deadlines.
+  row.session = advanceSession(row.session, 3100);
+  cues.update([row], 3100);
+  await settle();
+  assert.deepEqual(voice.calls, ["Laps, repetition 2 complete"]);
+  voice.end();
+  await settle();
+  cues.update([row], 4000);
+  await settle();
+  assert.deepEqual(voice.calls, ["Laps, repetition 2 complete", "Laps, start repetition 3"]);
+});
+
+test("a completion leaves a live rest cue queued, while foreground return never replays a missed boundary", async () => {
+  const voice = fakeSpeech();
+  const cues = createForegroundCues({ speech: voice.speech });
+  const row = running("Yoga", { kind: "interval", durationMs: 5000, repetitions: 3,
+    restMs: 3000, speakPhases: true, speakCompletion: true });
+  cues.update([row], 1000);
+  cues.update([row], 5000);
+  await settle();
+  voice.end();
+  await settle();
+  cues.update([row], 5500);
+  await settle();
+  assert.deepEqual(voice.calls, ["Yoga, repetition 1 complete", "Yoga, rest"]);
+  cues.clear();
+  cues.update([row], 8100);
+  await settle();
+  assert.deepEqual(voice.calls, ["Yoga, repetition 1 complete", "Yoga, rest", "cancelled"]);
+});
+
+test("final Skip announces the end of a session without claiming a completed repetition or chiming", async () => {
+  const voice = fakeSpeech();
+  let tones = 0;
+  const cues = createForegroundCues({ speech: voice.speech, tone: () => tones++ });
+  const row = running("Laps", { kind: "interval", durationMs: 3000,
+    speakCompletion: true, finalSecondsEnabled: true });
+  cues.update([row], 0);
+  row.session = { ...updateSession(row.session, "skip", 500), commandRevision: 1 };
+  cues.update([row], 500);
+  await settle();
+  assert.deepEqual(voice.calls, ["Laps, session finished"]);
+  assert.equal(tones, 0);
+});
+
+test("preparation hands off to the actual start, and zero rest goes directly to the next repetition", async () => {
+  const voice = fakeSpeech();
+  const cues = createForegroundCues({ speech: voice.speech });
+  const prepared = running("Yoga", { kind: "interval", durationMs: 4000,
+    preparation: true, speakPhases: true });
+  cues.update([prepared], 0);
+  await settle();
+  voice.end();
+  await settle();
+  cues.update([prepared], 3000);
+  await settle();
+  assert.deepEqual(voice.calls, ["Yoga, starting in 3", "Yoga, start repetition 1"]);
+  voice.end();
+  await settle();
+  cues.clear();
+
+  const continuous = running("Laps", { kind: "interval", durationMs: 4000,
+    repetitions: 2, restMs: 0, speakPhases: true });
+  cues.update([continuous], 1000);
+  cues.update([continuous], 4000);
+  await settle();
+  assert.equal(voice.calls.at(-1), "Laps, start repetition 2");
 });
