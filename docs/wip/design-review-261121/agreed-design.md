@@ -1,5 +1,7 @@
 # Agreed design and acceptance plan
 
+This design review is frozen as a record of the agreed scope. Subsequent timezone work is tracked in the [future timezone enhancements spec](../timezone-picker-spec.md).
+
 ## Design objective
 
 Let someone start timing without organizing the app first, keep the current phase and next action visible during a run, and make recent outcomes easy to check. Retain four timing jobs in the Dashboard picker.

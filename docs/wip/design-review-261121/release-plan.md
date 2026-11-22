@@ -1,5 +1,7 @@
 # Design release plan
 
+This release plan is frozen as part of the design review record. The [future timezone enhancements spec](../timezone-picker-spec.md) tracks later work.
+
 The reconvened panel agreed to release independently useful changes. Product favored pairing clearer first use with safer removal. UX and Architecture argued for proving the lifecycle and storage changes on the existing UI before changing navigation. The UI review agreed, since a navigation rewrite would make focus and recovery regressions harder to isolate.
 
 | Phase | Branch scope | Exit gate |

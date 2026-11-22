@@ -1,0 +1,75 @@
+name: Build Android sideload APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    environment: mobile-sideload
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm test
+      - run: npm run mobile:sync -- android
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          TIMEANDATE_TEST_MODE: native
+      - run: ./gradlew :app:assembleRelease
+        working-directory: android
+      - name: Ensure Android signing tools are installed
+        run: |
+          if [[ ! -x "$ANDROID_HOME/build-tools/36.0.0/apksigner" ]]; then
+            sdkmanager "build-tools;36.0.0"
+          fi
+      - name: Sign and verify the Release APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ vars.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          : "${ANDROID_KEYSTORE_BASE64:?Set the ANDROID_KEYSTORE_BASE64 environment secret}"
+          : "${ANDROID_KEYSTORE_PASSWORD:?Set the ANDROID_KEYSTORE_PASSWORD environment secret}"
+          : "${ANDROID_KEY_ALIAS:?Set the ANDROID_KEY_ALIAS environment variable}"
+          : "${ANDROID_KEY_PASSWORD:?Set the ANDROID_KEY_PASSWORD environment secret}"
+
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          umask 077
+          signing_dir=$(mktemp -d "$RUNNER_TEMP/android-sideload.XXXXXX")
+          trap 'rm -rf "$signing_dir"' EXIT
+          keystore="$signing_dir/sideload.keystore"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          mkdir -p artifacts/android-sideload
+          apk=artifacts/android-sideload/timeandate-android-release.apk
+
+          "$tools/zipalign" -P 16 -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk "$signing_dir/aligned.apk"
+          "$tools/apksigner" sign --ks "$keystore" --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --out "$apk" "$signing_dir/aligned.apk"
+          "$tools/zipalign" -c -P 16 4 "$apk"
+          "$tools/apksigner" verify --verbose --print-certs "$apk"
+          badging=$("$tools/aapt" dump badging "$apk")
+          if grep -q '^application-debuggable' <<< "$badging"; then
+            echo "::error::Refusing to distribute a debuggable APK."
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: timeandate-android-release-${{ github.sha }}
+          path: artifacts/android-sideload/timeandate-android-release.apk
+          if-no-files-found: error

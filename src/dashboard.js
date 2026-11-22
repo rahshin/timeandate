@@ -1,13 +1,14 @@
 import "./dashboard.css";
 import { dashboardCountdown, dashboardSessionInterval } from "./dashboard-sessions.js";
-import { Temporal } from "@js-temporal/polyfill";
 import { playTone, unlockTone } from "./timeandate/audio.js";
-import { clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
+import {
+  clockFormatters, createDateTimer, dateCountdownDisplay, dateCountdownShortcut, dateCountdownUsesAutomaticSeconds,
+  fillTimeZones, validDateTimer,
+} from "./time.js";
 import { createForegroundCues, createWakeController } from "./foreground-cues.js";
 import { hasForegroundCues } from "./foreground-cue-policy.js";
 import { foregroundPlatform } from "./foreground-platform.js";
 import { advanceSession } from "./timer-session.js";
-import { durationDisplay } from "./duration.js";
 import {
   cardPrefix as prefix, checkpointSessions, commandSession, dataKey, offBoardRuns, openDashboardData, originalId,
   presetSession, savePreset, sessionDefinition, unfinishedCards,
@@ -18,16 +19,37 @@ const dateCountdown = {
   description: "Count down to a date and time in a selected timezone.",
   fields: `
     <label class="field">Target date and time <input name="target" type="datetime-local" required></label>
+    <div class="dashboard-actions">
+      <button type="button" class="secondary" name="targetNow">Now</button>
+      <button type="button" class="secondary" name="targetToday">Today</button>
+    </div>
     <label class="field">Timezone <select name="timezone"></select></label>`,
   init(fields, value) {
     fillTimeZones(fields.timezone);
     if (value) {
       fields.target.value = value.wallTime;
       fields.timezone.value = value.zone;
+    } else {
+      fields.target.value = dateCountdownShortcut("today", "", fields.timezone.value);
+      fields.target.dataset.autoFilled = "";
     }
+    const setTarget = shortcut => {
+      fields.target.value = dateCountdownShortcut(shortcut, fields.target.value, fields.timezone.value);
+      fields.target.dispatchEvent(new Event("input", { bubbles: true }));
+      if (shortcut === "now") fields.target.dataset.autoFilled = "";
+    };
+    fields.target.addEventListener("input", () => { delete fields.target.dataset.autoFilled; });
+    fields.timezone.addEventListener("change", () => {
+      if (fields.target.hasAttribute("data-auto-filled")) {
+        fields.target.value = dateCountdownShortcut("today", "", fields.timezone.value);
+      }
+    });
+    fields.targetNow.onclick = () => setTarget("now");
+    fields.targetToday.onclick = () => setTarget("today");
   },
-  create(fields, now) {
-    return { ...createDateTimer(fields.target.value, fields.timezone.value), holdAt: now, ready: true };
+  create(fields, now, previous) {
+    const target = createDateTimer(fields.target.value, fields.timezone.value);
+    return { ...target, holdAt: now, ready: true, showSeconds: previous?.showSeconds === true };
   },
   toggle(timer, now) {
     const { holdAt, ready, ...target } = timer;
@@ -39,18 +61,10 @@ const dateCountdown = {
     const time = timer.holdAt ?? now;
     const milliseconds = Math.max(0, Date.parse(timer.instant) - time);
     const held = timer.holdAt !== undefined;
-    let display = durationDisplay(milliseconds);
-    if (milliseconds >= 3_600_000) {
-      const units = { years: "y", months: "mo", days: "d", hours: "h", minutes: "m" };
-      display = Object.entries(countdown(timer.instant, timer.zone, Temporal.Instant.fromEpochMilliseconds(time)) ?? {})
-        .filter(([, value]) => value > 0)
-        .map(([unit, value]) => `${value}${units[unit]}`)
-        .join(" ") || display;
-    }
     return {
-      display,
+      display: dateCountdownDisplay(timer, time),
       status: held ? (timer.ready ? "Ready" : "Paused") : milliseconds ? "Running" : "Complete",
-      action: held ? (timer.ready ? "Play" : "Resume") : milliseconds ? "Pause" : "",
+      action: held ? (timer.ready ? "Start" : "Resume") : milliseconds ? "Pause" : "",
       detail: `${timer.wallTime.replace("T", " ")} · ${timer.zone.replaceAll("_", " ")}`,
     };
   },
@@ -139,7 +153,7 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
     </header>
     ${persistenceNotice}
     ${definition ? `
-      <form class="card dashboard-form">
+      <form class="card dashboard-form" novalidate>
         ${supportsPresets ? `<label class="field">Preset <select name="preset"></select></label>` : ""}
         <label class="field">Name (optional) <input name="timerName" maxlength="80"></label>
         ${definition.fields}
@@ -175,6 +189,16 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
   definition.init?.(form.elements, record?.value);
   if (record) form.elements.timerName.value = record.name;
   form.oninput = () => { error.hidden = true; };
+  function fillEmptyTimerField(field) {
+    if (!(field instanceof HTMLInputElement) || !field.required || !field.validity.valueMissing ||
+        field.validity.badInput) return;
+    if (field.type === "number") field.value = field.min || "0";
+    if (definition === dateCountdown && field === form.elements.target) {
+      field.value = dateCountdownShortcut("today", "", form.elements.timezone.value);
+      field.dataset.autoFilled = "";
+    }
+  }
+  form.addEventListener("focusout", event => fillEmptyTimerField(event.target));
   form.addEventListener("invalid", event => {
     const advanced = event.target.closest("details");
     if (advanced) advanced.open = true;
@@ -222,19 +246,21 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
     window.addEventListener("dashboarddata", refreshPresets);
   }
 
-  form.onsubmit = async event => {
-    event.preventDefault();
+  async function saveTimer(submitter) {
     const now = Date.now();
     const name = fields.timerName.value.trim();
     let value;
     try {
-      value = definition.create(fields, now);
+      if (definition === dateCountdown && fields.target.hasAttribute("data-auto-filled")) {
+        fields.target.value = dateCountdownShortcut("today", "", fields.timezone.value);
+      }
+      value = definition.create(fields, now, record?.value);
     } catch (issue) {
       error.textContent = issue.message;
       error.hidden = false;
       return;
     }
-    const action = event.submitter?.name;
+    const action = submitter?.name;
     if (supportsPresets && ["savePreset", "updatePreset"].includes(action)) {
       if (!name) {
         error.textContent = "Enter a name for the preset.";
@@ -272,6 +298,22 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
     });
     if (saved && form.isConnected) navigate(home, true, editKey ? undefined : key);
     else error.hidden = false;
+  }
+  let saving = false;
+  form.onsubmit = async event => {
+    event.preventDefault();
+    if (saving) return;
+    for (const field of fields) fillEmptyTimerField(field);
+    if (!form.reportValidity()) return;
+    saving = true;
+    try {
+      await saveTimer(event.submitter);
+    } catch {
+      error.textContent = "Could not save. Try again.";
+      error.hidden = false;
+    } finally {
+      saving = false;
+    }
   };
   return { redraw() {}, unmount() {
     unmount();
@@ -569,11 +611,15 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
 
   function addCard(key, record, path, definition = savedDefinition(record)) {
     const isClock = record.type === "clock";
-    const formats = isClock ? clockFormatters(record.value.zone, record.value.showSeconds) : undefined;
+    const hasSeconds = isClock || definition === dateCountdown;
+    let formats;
+    let formatsShowSeconds;
+    let showSeconds;
     const zone = isClock ? record.value.zone.replaceAll("_", " ") : "";
     const card = document.createElement("article");
     card.className = "card dashboard-card";
-    if (!path) card.dataset.cardKey = key;
+    card.dataset.cardKey = key;
+    card.dataset.cardType = record.type;
     card.innerHTML = `
       <div class="dashboard-card-heading">
         <h2 tabindex="-1"></h2>
@@ -587,20 +633,15 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
           </svg>
         </button>`}
         ${!path && definition.toggle ? `<a class="dashboard-icon dashboard-edit" data-route>${penIcon}</a>` : ""}
-        ${!path ? `<details class="dashboard-card-options">
-          <summary class="dashboard-icon" aria-label="Timer or clock options" title="Options">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-              <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
-            </svg>
-          </summary>
-          <button type="button" class="secondary dashboard-remove">Remove</button>
-        </details>` : ""}
+        ${!path ? '<button type="button" class="secondary dashboard-icon dashboard-remove">×</button>' : ""}
         </div>
       </div>
       ${isClock
         ? '<time class="dashboard-clock"></time>'
         : '<p class="dashboard-clock" role="timer" aria-label="Time remaining"></p>'}
       <p class="dashboard-status"></p>
+      ${hasSeconds ? `<label class="dashboard-clock-seconds"><input type="checkbox"
+        ${isClock ? "" : 'title="Show seconds before the final hour" aria-label="Show seconds before the final hour"'}> Seconds</label>` : ""}
       <div class="dashboard-actions"></div>
       <p class="dashboard-detail"></p>`;
     const title = card.querySelector("h2");
@@ -668,7 +709,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       }
 
       if (definition.toggle) {
-        toggle = timerButton("Play", definition.toggle);
+        toggle = timerButton("Start", definition.toggle);
         toggle.classList.remove("secondary");
         toggle.classList.add("dashboard-primary");
         if (definition.reset) reset = timerButton("Reset", definition.reset);
@@ -683,22 +724,25 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         edit.title = `Edit ${label}`;
       }
       const remove = card.querySelector(".dashboard-remove");
-      const cardOptions = card.querySelector(".dashboard-card-options");
-      const optionsSummary = cardOptions.querySelector("summary");
-      optionsSummary.setAttribute("aria-label", `Options for ${label}`);
-      cardOptions.onkeydown = event => {
-        if (event.key !== "Escape" || !cardOptions.open) return;
-        cardOptions.open = false;
-        optionsSummary.focus();
-      };
+      if (hasSeconds) {
+        showSeconds = card.querySelector(".dashboard-clock-seconds input");
+        showSeconds.onchange = () => {
+          const checked = showSeconds.checked;
+          void repository.change(data => {
+            const current = data.cards[key];
+            if (current?.type !== record.type || boardId(current) !== boardId(record)) return false;
+            current.value.showSeconds = checked;
+            return true;
+          });
+        };
+      }
       remove.setAttribute("aria-label", `Remove ${label}`);
       remove.title = `Remove ${label}`;
       remove.onclick = async () => {
         const id = boardId(record);
         let blocked = unfinishedCards(localData, [key], Date.now());
         if (blocked.length) {
-          cardOptions.open = false;
-          optionsSummary.focus();
+          remove.focus();
           showRemovalBlock(id, blocked, false);
           return;
         }
@@ -714,8 +758,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
           return true;
         });
         if (blocked.length) {
-          cardOptions.open = false;
-          optionsSummary.focus();
+          remove.focus();
           showRemovalBlock(id, blocked, false);
         }
         if (removed) add.focus();
@@ -724,7 +767,24 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
 
     let previousStatus;
     cards.set(key, (now, announce) => {
-      if (formats) {
+      const current = path ? record : stored.get(key);
+      if (!current) return;
+      const checked = current.value.showSeconds === true;
+      if (showSeconds && checked !== showSeconds.defaultChecked) {
+        showSeconds.defaultChecked = checked;
+        showSeconds.checked = checked;
+      }
+      if (definition === dateCountdown) {
+        const secondsLabel = showSeconds.parentElement;
+        const hidden = dateCountdownUsesAutomaticSeconds(current.value, now);
+        if (hidden && document.activeElement === showSeconds) title.focus({ preventScroll: true });
+        if (secondsLabel.hidden !== hidden) secondsLabel.hidden = hidden;
+      }
+      if (isClock) {
+        if (!formats || checked !== formatsShowSeconds) {
+          formats = clockFormatters(record.value.zone, checked);
+          formatsShowSeconds = checked;
+        }
         const display = formats.time.format(now);
         const date = formats.date.format(now);
         if (clock.textContent !== display) clock.textContent = display;
@@ -732,8 +792,6 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         if (status.textContent !== date) status.textContent = date;
         return;
       }
-      const current = path ? record : stored.get(key);
-      if (!current) return;
       const muted = path ? linkedMute() : current.muted === true;
       const pressed = String(muted);
       if (mute.getAttribute("aria-pressed") !== pressed) {
@@ -846,6 +904,11 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
 
   function refresh() {
     if (viewingHistory) return;
+    const focusable = "h2, button, a[href], input";
+    const focused = document.activeElement;
+    const previousCard = focused?.closest("[data-card-key]");
+    const focusIndex = previousCard && grid.contains(previousCard)
+      ? [...previousCard.querySelectorAll(focusable)].indexOf(focused) : -1;
     wasVisible = false;
     announcement.textContent = "";
     cards.clear();
@@ -864,6 +927,15 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     }
     empty.hidden = cards.size > 0;
     redraw();
+    if (focusIndex !== -1) {
+      const replacement = [...grid.children].find(card =>
+        card.dataset.cardKey === previousCard.dataset.cardKey &&
+        card.dataset.cardType === previousCard.dataset.cardType);
+      const control = replacement?.querySelectorAll(focusable)[focusIndex];
+      const target = control && !control.closest("[hidden]") && !control.disabled
+        ? control : replacement?.querySelector("h2") ?? add;
+      target.focus({ preventScroll: true });
+    }
   }
 
   function renderHistory() {
@@ -930,7 +1002,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       const card = localData.cards[key];
       const old = previous.cards[key];
       return !old || card.name !== old.name || card.type !== old.type || card.dashboardId !== old.dashboardId ||
-        (card.type === "clock" && JSON.stringify(card.value) !== JSON.stringify(old.value));
+        (card.type === "clock" && card.value.zone !== old.value.zone);
     });
     if (priorActive !== activeId || structuralChange ||
         linkedBoard(previous.dashboards.boards) !== linkedBoard(dashboards.boards)) refresh();
