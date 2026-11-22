@@ -120,14 +120,32 @@ export function commandSession(data, key, action, expected, now) {
   return true;
 }
 
+function unfinishedSession(card, now) {
+  const definition = sessionDefinition(card?.type);
+  if (!definition?.valid(card.value)) return;
+  const session = advanceSession(definition.normalize(card.value, now), now);
+  if (session.status === "running" || session.status === "paused") return session;
+}
+
 export function unfinishedCards(data, keys, now) {
-  return keys.filter(key => {
-    const card = data.cards[key];
-    const definition = sessionDefinition(card?.type);
-    if (!definition?.valid(card.value)) return false;
-    const { status } = advanceSession(definition.normalize(card.value, now), now);
-    return status === "running" || status === "paused";
-  });
+  return keys.filter(key => unfinishedSession(data.cards[key], now));
+}
+
+export function offBoardRuns(data, activeBoardId, now) {
+  const boards = new Map(data.dashboards.boards.map(board => [board.id, board.name]));
+  const runs = [];
+  for (const [key, card] of Object.entries(data.cards)) {
+    const dashboardId = card.dashboardId ?? originalId;
+    if (dashboardId === activeBoardId || !boards.has(dashboardId)) continue;
+    const session = unfinishedSession(card, now);
+    if (!session) continue;
+    runs.push({
+      key, dashboardId, dashboardName: boards.get(dashboardId),
+      name: card.name || sessionDefinition(card.type).name,
+      status: session.status, recovered: session.recovered === true,
+    });
+  }
+  return runs;
 }
 
 export function openDashboardData(onChange) {

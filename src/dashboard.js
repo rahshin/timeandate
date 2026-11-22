@@ -5,7 +5,7 @@ import { playTone, unlockTone } from "./timeandate/audio.js";
 import { clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
 import { durationDisplay } from "./duration.js";
 import {
-  cardPrefix as prefix, checkpointSessions, commandSession, dataKey, openDashboardData, originalId,
+  cardPrefix as prefix, checkpointSessions, commandSession, dataKey, offBoardRuns, openDashboardData, originalId,
   presetSession, savePreset, sessionDefinition, unfinishedCards,
 } from "./dashboard-data.js";
 
@@ -273,7 +273,7 @@ function renderSetupPage(root, type, types, navigate, editKey, record, editDefin
   } };
 }
 
-export function mountDashboard(root, { path, requestedBoard, interval, linkedTimers, navigate, focusTarget }) {
+export function mountDashboard(root, { path, requestedBoard, requestedTimer, interval, linkedTimers, navigate, focusTarget }) {
   const viewingHistory = path === historyPath;
   if (requestedBoard !== null && !dashboards.boards.some(board => board.id === requestedBoard)) {
     navigate(viewingHistory ? historyPath : dashboardPath, true);
@@ -357,6 +357,7 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
       </div>
     </dialog>
     <section class="dashboard-board-view" ${viewingHistory ? "hidden" : ""}>
+    <aside class="dashboard-off-board" aria-label="Timers on other dashboards" hidden></aside>
     <p class="dashboard-announcement" role="status"></p>
     <p class="dashboard-empty">Add a timer for a duration, a routine, or a date. You can also add a world clock.</p>
     <section class="dashboard-grid" aria-label="Saved timers and clocks"></section>
@@ -371,6 +372,7 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
   const add = root.querySelector(".dashboard-add");
   const grid = root.querySelector(".dashboard-grid");
   const empty = root.querySelector(".dashboard-empty");
+  const offBoard = root.querySelector(".dashboard-off-board");
   const cards = new Map();
   const tabs = root.querySelector(".dashboard-tabs");
   const boardPicker = root.querySelector(".dashboard-board-picker");
@@ -759,8 +761,67 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
     grid.append(card);
   }
 
+  let previousOffBoardRuns = "[]";
+  function renderOffBoardRuns(now) {
+    if (viewingHistory) return;
+    const runs = offBoardRuns(localData, activeId, now);
+    const snapshot = JSON.stringify(runs);
+    if (snapshot === previousOffBoardRuns) return;
+    previousOffBoardRuns = snapshot;
+
+    const focused = document.activeElement;
+    const hadFocus = offBoard.contains(focused);
+    const focusedKey = hadFocus ? focused.dataset.dashboardFocus : undefined;
+    const wasOpen = offBoard.querySelector("details")?.open;
+    offBoard.replaceChildren();
+    offBoard.hidden = runs.length === 0;
+    if (!runs.length) {
+      if (hadFocus) add.focus({ preventScroll: true });
+      return;
+    }
+
+    function runLink(run) {
+      const link = document.createElement("a");
+      link.className = "dashboard-off-board-link";
+      link.href = `${boardUrl(run.dashboardId)}&timer=${encodeURIComponent(run.key.slice(prefix.length))}`;
+      link.dataset.route = "";
+      link.dataset.dashboardFocus = run.key;
+      const name = document.createElement("strong");
+      name.textContent = run.name;
+      const context = document.createElement("span");
+      const status = run.status === "running" ? "Running" : run.recovered ? "Restored paused" : "Paused";
+      context.textContent = `${run.dashboardName} · ${status}`;
+      link.append(name, context);
+      link.onclick = () => {
+        if (dashboards.boards.find(board => board.id === run.dashboardId)?.sound) unlockTone();
+      };
+      return link;
+    }
+
+    const links = runs.map(runLink);
+    if (links.length === 1) {
+      offBoard.append(links[0]);
+    } else {
+      const details = document.createElement("details");
+      details.open = Boolean(wasOpen || focusedKey);
+      const summary = document.createElement("summary");
+      const running = runs.filter(run => run.status === "running").length;
+      const paused = runs.length - running;
+      const counts = [running ? `${running} running` : "", paused ? `${paused} paused` : ""].filter(Boolean);
+      summary.textContent = `Other dashboards · ${counts.join(", ")}`;
+      details.append(summary, ...links);
+      offBoard.append(details);
+    }
+    if (hadFocus) {
+      const target = links.find(link => link.dataset.dashboardFocus === focusedKey)
+        ?? offBoard.querySelector("summary, a");
+      target.focus({ preventScroll: true });
+    }
+  }
+
   function redraw(commandKey) {
     const now = Date.now();
+    renderOffBoardRuns(now);
     const visible = !document.hidden;
     const messages = [];
     for (const [key, update] of cards) {
@@ -888,7 +949,8 @@ export function mountDashboard(root, { path, requestedBoard, interval, linkedTim
   refresh();
   renderHistory();
   showPersistenceStatus(root);
-  const newCard = focusTarget && [...grid.children].find(card => card.dataset.cardKey === focusTarget);
+  const requestedCard = focusTarget ?? (requestedTimer ? prefix + requestedTimer : undefined);
+  const newCard = requestedCard && [...grid.children].find(card => card.dataset.cardKey === requestedCard);
   if (newCard) {
     newCard.scrollIntoView({ block: "nearest" });
     (newCard.querySelector(".dashboard-primary") ?? newCard.querySelector("h2"))?.focus({ preventScroll: true });

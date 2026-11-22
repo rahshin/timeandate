@@ -433,3 +433,43 @@
 .dashboard-card .dashboard-detail {
   margin-top: 0.75rem;
 }
+
+.dashboard-off-board {
+  width: min(100%, 32rem);
+  margin-bottom: 1rem;
+  border: 1px solid var(--line);
+  border-inline-start: 0.2rem solid var(--accent);
+  border-radius: 0.45rem;
+  background: var(--panel);
+}
+
+.dashboard-off-board summary,
+.dashboard-off-board-link {
+  min-height: 2.75rem;
+  padding: 0.65rem 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-off-board summary {
+  align-content: center;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.dashboard-off-board-link {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.dashboard-off-board-link span {
+  color: var(--muted);
+}
+
+.dashboard-off-board-link:hover strong {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.dashboard-off-board details .dashboard-off-board-link {
+  border-top: 1px solid var(--line);
+}
