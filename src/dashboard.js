@@ -10,7 +10,6 @@ import {
 import { createForegroundCues, createWakeController } from "./foreground-cues.js";
 import { hasForegroundCues } from "./foreground-cue-policy.js";
 import { foregroundPlatform } from "./foreground-platform.js";
-import { upcomingHolidays } from "./dashboard-holidays.js";
 import { advanceSession } from "./timer-session.js";
 import {
   cardPrefix as prefix, checkpointSessions, commandSession, dataKey, offBoardRuns, openDashboardData, originalId,
@@ -21,14 +20,6 @@ const dateCountdown = {
   name: "Date Countdown",
   description: "Count down to a date and time in a selected timezone.",
   fields: `
-    <details>
-      <summary>Holiday presets</summary>
-      <label class="field">Country <select name="holidayCountry">
-        <option value="US">United States</option>
-        <option value="IN">India</option>
-      </select></label>
-      <label class="field">Holiday <select name="holidayPreset"></select></label>
-    </details>
     <label class="field">Target date and time <input name="target" type="datetime-local" required></label>
     <div class="dashboard-actions">
       <button type="button" class="secondary" name="targetNow">Now</button>
@@ -55,28 +46,6 @@ const dateCountdown = {
         fields.target.value = dateCountdownShortcut("today", "", fields.timezone.value);
       }
     });
-    const country = new Intl.Locale(navigator.language || "en").region;
-    if (country === "IN") fields.holidayCountry.value = country;
-    let holidays;
-    const refreshHolidays = () => {
-      holidays = upcomingHolidays(fields.holidayCountry.value, fields.timezone.value);
-      fields.holidayPreset.replaceChildren(new Option("Choose a holiday", ""));
-      for (const { id, name, value } of holidays) {
-        fields.holidayPreset.add(new Option(`${name} · ${value.wallTime.slice(0, 10)}`, id));
-      }
-    };
-    refreshHolidays();
-    fields.holidayCountry.onchange = refreshHolidays;
-    fields.timezone.addEventListener("change", refreshHolidays);
-    fields.target.addEventListener("input", () => { fields.holidayPreset.value = ""; });
-    fields.holidayPreset.onchange = () => {
-      const holiday = holidays.find(({ id }) => id === fields.holidayPreset.value);
-      if (!holiday) return;
-      fields.timerName.value = holiday.name;
-      fields.target.value = holiday.value.wallTime;
-      fields.target.dispatchEvent(new Event("input", { bubbles: true }));
-      fields.holidayPreset.value = holiday.id;
-    };
     fields.targetNow.onclick = () => setTarget("now");
     fields.targetToday.onclick = () => setTarget("today");
   },
@@ -164,13 +133,6 @@ const editPath = dashboardPath + "/edit/";
 function boardUrl(id, path = dashboardPath) {
   return `${path}?board=${encodeURIComponent(id)}`;
 }
-
-const speakerIcon = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  <path d="M11 4 5 9H2v6h3l6 5z"/>
-  <path class="dashboard-speaker-waves" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>
-  <path class="dashboard-speaker-cross" d="m16 9 6 6m0-6-6 6"/>
-</svg>`;
 
 const penIcon = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 6 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11L4 20z"/></svg>';
 
@@ -403,17 +365,13 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         <summary>Switch dashboard</summary>
         <div class="dashboard-board-links"></div>
       </details>
-      <button type="button" class="dashboard-options secondary" aria-label="Dashboard options" aria-haspopup="dialog" title="Dashboard options">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M9.8 3h4.4l.6 2.6 1.7 1 2.6-.8 2.2 3.8-2 1.8v2l2 1.8-2.2 3.8-2.6-.8-1.7 1-.6 2.6H9.8l-.6-2.6-1.7-1-2.6.8-2.2-3.8 2-1.8v-2l-2-1.8 2.2-3.8 2.6.8 1.7-1z" transform="translate(0 -.4)"/>
-          <circle cx="12" cy="12" r="3"/>
-        </svg>
-      </button>
+      <button type="button" class="dashboard-options secondary">Dashboard options</button>
     </div>
     <dialog class="dashboard-create dashboard-settings" aria-labelledby="dashboard-settings-title">
       <div class="dashboard-form">
         <h2 id="dashboard-settings-title">Dashboard options</h2>
         <p class="dashboard-settings-name"></p>
+        <label class="dashboard-checkbox"><input type="checkbox" class="dashboard-sound"> Timer sound</label>
         <button type="button" class="dashboard-default secondary"></button>
         <button type="button" class="dashboard-rename secondary">Rename dashboard</button>
         <button type="button" class="dashboard-new secondary">Add dashboard</button>
@@ -432,13 +390,10 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       </form>
     </dialog>
     <header class="intro dashboard-heading">
-      <div class="dashboard-title">
-        <h1 tabindex="-1"></h1>
-        ${viewingHistory ? "" : '<button type="button" class="dashboard-board-sound dashboard-title-sound secondary" hidden></button>'}
-      </div>
+      <h1 tabindex="-1"></h1>
       ${viewingHistory
         ? '<a class="dashboard-return" data-route>Back to dashboard</a>'
-        : `<div class="dashboard-heading-actions"><a href="${boardUrl(activeId, addPath)}" class="dashboard-add" data-route>Add Timer</a></div>`}
+        : `<a href="${boardUrl(activeId, addPath)}" class="dashboard-add" data-route>Add timer or clock</a>`}
     </header>
     ${persistenceNotice}
     <dialog class="dashboard-create dashboard-removal-block" aria-labelledby="dashboard-removal-title">
@@ -469,7 +424,6 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
   const empty = root.querySelector(".dashboard-empty");
   const offBoard = root.querySelector(".dashboard-off-board");
   const cards = new Map();
-  const switcher = root.querySelector(".dashboard-switcher");
   const tabs = root.querySelector(".dashboard-tabs");
   const boardPicker = root.querySelector(".dashboard-board-picker");
   const boardLinks = boardPicker.querySelector(".dashboard-board-links");
@@ -483,10 +437,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
   }
   const heading = root.querySelector("h1");
   const defaultButton = root.querySelector(".dashboard-default");
-  const titleSound = root.querySelector(".dashboard-title-sound");
-  const activeBoard = () => dashboards.boards.find(board => board.id === activeId);
-  let audibleBoard;
-  let soundIndicatorTimer;
+  const sound = root.querySelector(".dashboard-sound");
   const announcement = root.querySelector(".dashboard-announcement");
   const create = root.querySelector(".dashboard-editor");
   const createForm = create.querySelector("form");
@@ -571,49 +522,23 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       return true;
     });
   };
-  function configureBoardSound(button, board) {
-    button.innerHTML = speakerIcon;
-    button.dataset.soundBoard = board.id;
-    button.dataset.muted = String(board.muted === true);
-    button.dataset.audible = String(audibleBoard === board.id && !board.muted);
-    const label = `${board.muted ? "Unmute" : "Mute"} ${board.name}`;
-    button.setAttribute("aria-label", label);
-    button.title = label;
-    button.onclick = () => {
-      if (board.muted) unlockTone();
-      void repository.change(({ dashboards }) => {
-        const saved = dashboards.boards.find(candidate => candidate.id === board.id);
-        if (!saved) return false;
-        saved.muted = !saved.muted;
-        return true;
-      });
-    };
-  }
-
-  function clearSoundIndicator() {
-    clearTimeout(soundIndicatorTimer);
-    audibleBoard = undefined;
-    for (const button of root.querySelectorAll('[data-audible="true"]')) button.dataset.audible = "false";
-  }
-
-  function indicateSound() {
-    clearSoundIndicator();
-    audibleBoard = activeId;
-    for (const button of root.querySelectorAll("[data-sound-board]")) {
-      if (button.dataset.soundBoard === activeId) button.dataset.audible = "true";
-    }
-    soundIndicatorTimer = setTimeout(clearSoundIndicator, 900);
-  }
-
-  function playDashboardTone(play) {
-    if (play()) indicateSound();
-  }
+  sound.onchange = () => {
+    const id = activeId;
+    const enabled = sound.checked;
+    if (enabled) unlockTone();
+    void repository.change(({ dashboards }) => {
+      const board = dashboards.boards.find(board => board.id === id);
+      if (!board) return false;
+      board.sound = enabled;
+      return true;
+    });
+  };
 
   function updatePreferences() {
     const isDefault = dashboards.defaultId === activeId;
-    defaultButton.hidden = dashboards.boards.length === 1;
-    defaultButton.textContent = isDefault ? "Opens first" : "Open this dashboard first";
+    defaultButton.textContent = isDefault ? "Default dashboard" : "Set as default";
     defaultButton.setAttribute("aria-disabled", String(isDefault));
+    sound.checked = dashboards.boards.find(board => board.id === activeId).sound === true;
   }
 
   deleteBoard.onclick = async () => {
@@ -653,7 +578,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
 
   function refreshDashboard() {
     if (!dashboards.boards.some(board => board.id === activeId)) activeId = dashboards.defaultId;
-    const active = activeBoard();
+    const active = dashboards.boards.find(board => board.id === activeId);
     heading.textContent = viewingHistory ? "Timer history" : active.name;
     document.title = `${heading.textContent} · Time And Date`;
     updateHistoryLink();
@@ -663,14 +588,11 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     }
     add.href = boardUrl(activeId, addPath);
     updatePreferences();
-    if (active.muted) clearSoundIndicator();
-    configureBoardSound(titleSound, active);
     settings.querySelector(".dashboard-settings-name").textContent = active.name;
     deleteBoard.disabled = dashboards.boards.length === 1;
     const focusedLink = document.activeElement;
     for (const group of [tabs, boardLinks]) {
       const focusedBoard = group.contains(focusedLink) && focusedLink.dataset.boardId;
-      const focusedSound = group.contains(focusedLink) && focusedLink.dataset.soundBoard;
       group.replaceChildren();
       for (const board of dashboards.boards) {
         const link = document.createElement("a");
@@ -679,55 +601,15 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         link.dataset.boardId = board.id;
         link.textContent = board.name;
         if (board.id === activeId) link.setAttribute("aria-current", "page");
-        const item = document.createElement("div");
-        item.className = "dashboard-board-item";
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "dashboard-board-sound secondary";
-        configureBoardSound(button, board);
-        item.append(link, button);
-        group.append(item);
-        if (board.id === focusedSound) button.focus({ preventScroll: true });
+        if (board.sound) link.onclick = unlockTone;
+        group.append(link);
         if (board.id === focusedBoard) link.focus({ preventScroll: true });
       }
     }
-    const singleBoard = dashboards.boards.length === 1;
-    switcher.hidden = singleBoard;
-    if (singleBoard && options.parentElement === switcher) add.parentElement.append(options);
-    if (!singleBoard && options.parentElement !== switcher) switcher.append(options);
-    boardPicker.hidden = singleBoard;
+    boardPicker.hidden = dashboards.boards.length === 1;
     tabs.hidden = boardPicker.hidden || dashboards.boards.length > 3 ||
       dashboards.boards.some(board => board.name.length > 24);
-    titleSound.hidden = false;
-    titleSound.classList.toggle("dashboard-title-sound-mobile", !tabs.hidden);
   }
-
-  function fitReadout(clock) {
-    const text = clock.firstElementChild;
-    const available = clock.clientWidth;
-    if (!available) return;
-    clock.style.removeProperty("font-size");
-    if (text.getBoundingClientRect().width <= available) return;
-    let low = 0;
-    let high = Number.parseFloat(getComputedStyle(clock).fontSize);
-    // Measure the rendered text because glyph widths can change with optical sizing.
-    while (high - low > 0.25) {
-      const size = (low + high) / 2;
-      clock.style.fontSize = `${size}px`;
-      if (text.getBoundingClientRect().width <= available) low = size;
-      else high = size;
-    }
-    clock.style.fontSize = `${low}px`;
-  }
-
-  const readoutWidths = new WeakMap();
-  const readouts = new ResizeObserver(entries => {
-    for (const { target, contentRect: { width } } of entries) {
-      if (readoutWidths.get(target) === width) continue;
-      readoutWidths.set(target, width);
-      fitReadout(target);
-    }
-  });
 
   const countdownBorders = new ResizeObserver(entries => {
     for (const { target, contentRect: { width, height } } of entries) {
@@ -788,8 +670,8 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         </div>
       </div>
       ${isClock
-        ? '<time class="dashboard-clock"><span></span></time>'
-        : '<p class="dashboard-clock" role="timer" aria-label="Time remaining"><span></span></p>'}
+        ? '<time class="dashboard-clock"></time>'
+        : '<p class="dashboard-clock" role="timer" aria-label="Time remaining"></p>'}
       <p class="dashboard-status"></p>
       ${hasSeconds ? `<label class="dashboard-clock-seconds"><input type="checkbox"
         ${isClock ? "" : 'title="Show seconds before the final hour" aria-label="Show seconds before the final hour"'}> Seconds</label>` : ""}
@@ -798,17 +680,6 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     const title = card.querySelector("h2");
     const detail = card.querySelector(".dashboard-detail");
     const clock = card.querySelector(".dashboard-clock");
-    const readout = clock.firstElementChild;
-    let readoutShape;
-    readouts.observe(clock);
-    function updateReadout(display) {
-      if (readout.textContent === display) return;
-      readout.textContent = display;
-      const shape = display.replace(/[0-9]/g, "0");
-      if (shape === readoutShape) return;
-      readoutShape = shape;
-      fitReadout(clock);
-    }
     const status = card.querySelector(".dashboard-status");
     const border = card.querySelector(".dashboard-countdown-border");
     if (border) countdownBorders.observe(border);
@@ -962,14 +833,14 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         }
         const display = formats.time.format(now);
         const date = formats.date.format(now);
-        updateReadout(display);
+        if (clock.textContent !== display) clock.textContent = display;
         clock.dateTime = new Date(now).toISOString();
         if (status.textContent !== date) status.textContent = date;
         return;
       }
       const view = definition.describe(current.value, now);
       const config = sessionSound ? definition.normalize(current.value, now).config : undefined;
-      const mode = config?.soundMode ?? (config && !current.muted ? timerSoundMode(config, activeBoard().sound === true) : undefined);
+      const mode = config?.soundMode ?? (config && !current.muted ? timerSoundMode(config, sound.checked) : undefined);
       const muted = path ? linkedMute() : mode ? mode === "off" : current.muted === true;
       const pressed = String(muted);
       if (sessionSound) {
@@ -991,7 +862,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       previousStatus = view.status;
       const description = record.name ? `${definition.name} · ${view.detail}` : view.detail;
       if (detail.textContent !== description) detail.textContent = description;
-      updateReadout(view.display);
+      if (clock.textContent !== view.display) clock.textContent = view.display;
       const statusText = current.value.recovered && view.status.startsWith("Paused")
         ? view.status.replace("Paused", "Restored paused") : view.status;
       const cue = view.border?.label;
@@ -1096,8 +967,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     wasVisible = visible;
     if (messages.length) {
       announcement.textContent = messages.map(message => message.text).join(" ");
-      const board = activeBoard();
-      if (board.sound && !board.muted && messages.some(message => message.audible)) playDashboardTone(playTone);
+      if (sound.checked && messages.some(message => message.audible)) playTone();
     }
   }
 
@@ -1111,7 +981,6 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     wasVisible = false;
     announcement.textContent = "";
     cards.clear();
-    readouts.disconnect();
     countdownBorders.disconnect();
     grid.replaceChildren();
     // Standalone timers have their own routes and storage, independent of dashboard cards.
@@ -1215,15 +1084,9 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
   }
 
   const cues = createForegroundCues({
-    speech: platform.speech && {
-      play(text, expiresAt) {
-        if (Date.now() < expiresAt) indicateSound();
-        return platform.speech.play(text, expiresAt);
-      },
-      stop: () => platform.speech.stop(),
-    },
-    tone: () => playDashboardTone(playTone),
-    tick: () => playDashboardTone(playTick),
+    speech: platform.speech,
+    tone: playTone,
+    tick: playTick,
   });
   let cueBoard;
 
@@ -1237,7 +1100,6 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     cueBoard = activeId;
     const now = Date.now();
     const rows = [];
-    const muted = activeBoard()?.muted === true;
     let awake = false;
     for (const [key, record] of stored) {
       const definition = sessionDefinition(record.type);
@@ -1246,7 +1108,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       if (config.keepAwake && advanceSession(record.value, now).status === "running") awake = true;
       if (hasForegroundCues(config)) {
         rows.push({ key, label: record.name || definition.name,
-          muted: muted || (config.soundMode === undefined && record.muted === true), session: record.value });
+          muted: config.soundMode === undefined && record.muted === true, session: record.value });
       }
     }
     cues.update(rows, now);
@@ -1254,10 +1116,9 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
   }
 
   function enableSound() {
-    const board = activeBoard();
-    if (!board?.muted && (board?.sound || [...stored.values()].some(record => boardId(record) === activeId &&
+    if (sound.checked || [...stored.values()].some(record => boardId(record) === activeId &&
       (record.value?.config?.soundMode === "tick" || record.value?.config?.finalSecondsEnabled ||
-        record.value?.config?.completionSound === "chime")))) unlockTone();
+        record.value?.config?.completionSound === "chime"))) unlockTone();
     updateForeground(true);
   }
 
@@ -1298,10 +1159,8 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       window.removeEventListener("focus", resetAnnouncements);
       window.removeEventListener("blur", resetAnnouncements);
       clearInterval(cueTick);
-      readouts.disconnect();
       countdownBorders.disconnect();
       cues.clear();
-      clearSoundIndicator();
       wake.update(false);
     },
   };
