@@ -5,7 +5,7 @@ function tile(page, name) {
 }
 
 async function openEditor(page, type) {
-  await page.getByRole("link", { name: "Add timer or clock" }).click();
+  await page.getByRole("link", { name: "Add Timer" }).click();
   await page.getByRole("main").getByRole("link", { name: new RegExp(`^${type}\\b`) }).click();
 }
 
@@ -16,6 +16,79 @@ async function addClock(page, name) {
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(tile(page, name)).toBeVisible();
 }
+
+test("a fresh dashboard starts with editable examples that stay removed", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2027-07-01T12:00:00Z"));
+  await page.goto("/dashboard");
+  const names = ["Local Time", "25-Minute Focus", "Quick Intervals"];
+  await expect(page.locator(".dashboard-card h2")).toHaveText(names);
+  await expect(tile(page, "Local Time").locator("time")).toBeVisible();
+  await expect(tile(page, "25-Minute Focus").getByRole("timer")).toHaveText("00:25:00");
+  await expect(tile(page, "Quick Intervals").getByRole("timer")).toHaveText("00:00:30");
+
+  for (const name of names) {
+    page.once("dialog", dialog => dialog.accept());
+    await tile(page, name).getByRole("button", { name: `Remove ${name}` }).click();
+    await expect(tile(page, name)).toHaveCount(0);
+  }
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+  await expect(page.locator(".dashboard-card")).toHaveCount(0);
+});
+
+test("dashboard options open from a compact gear and return keyboard focus", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto("/dashboard");
+  const gear = page.getByRole("button", { name: "Dashboard options" });
+  await expect(gear).toHaveCSS("width", "44px");
+  await expect(gear).toHaveCSS("height", "44px");
+  await expect(page.locator(".dashboard-switcher")).toBeHidden();
+  await gear.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Dashboard options" });
+  await expect(dialog.getByRole("button", { name: "Open this dashboard first" })).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(gear).toBeFocused();
+  await gear.click();
+  await dialog.getByRole("button", { name: "Add dashboard" }).click();
+  const editor = page.getByRole("dialog", { name: "Add dashboard" });
+  await editor.getByLabel("Dashboard name").fill("Work");
+  await editor.getByRole("button", { name: "Add dashboard" }).click();
+  await expect(page.locator(".dashboard-switcher").getByRole("button", { name: "Dashboard options" })).toBeVisible();
+  await expect(page.getByText("Switch dashboard", { exact: true })).toBeVisible();
+  await gear.click();
+  await dialog.getByRole("button", { name: "Open this dashboard first" }).click();
+  await expect(dialog.getByRole("button", { name: "Opens first" })).toBeVisible();
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { name: "Work", exact: true })).toBeVisible();
+});
+
+test.describe("holiday countdowns", () => {
+  test.use({ locale: "en-US", timezoneId: "America/Los_Angeles" });
+
+  test("first-run seasonal countdown persists its removal and shares presets with the editor", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-12-26T12:00:00Z"));
+    await page.goto("/dashboard");
+    const newYear = tile(page, "New Year’s Eve");
+    await expect(page.locator(".dashboard-card")).toHaveCount(4);
+    await expect(newYear).toContainText("2027-01-01 00:00");
+    page.once("dialog", dialog => dialog.accept());
+    await newYear.getByRole("button", { name: "Remove New Year’s Eve" }).click();
+    await expect(newYear).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator(".dashboard-card")).toHaveCount(3);
+
+    await openEditor(page, "Date Countdown");
+    await page.getByText("Holiday presets", { exact: true }).click();
+    await page.getByRole("combobox", { name: "Country", exact: true }).selectOption("IN");
+    await page.getByRole("combobox", { name: "Holiday", exact: true }).selectOption("holi-goa");
+    await expect(page.getByLabel("Target date and time")).toHaveValue("2027-03-22T00:00");
+    await expect(page.getByLabel("Timezone")).toHaveValue("America/Los_Angeles");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(tile(page, "Holi (Dhulivandana, Goa)")).toBeVisible();
+  });
+});
 
 test("cleared duration fields submit with zero and repeated submits create one tile", async ({ page }) => {
   await page.goto("/dashboard");
@@ -189,4 +262,73 @@ test("an interval completes its repetitions and records the run in History", asy
   const run = page.getByRole("listitem").filter({ hasText: "Practice" });
   await expect(run).toHaveCount(1);
   await expect(run).toContainText("2 of 2 completed");
+});
+
+test("dashboard mute stops timer cues and preserves the tile sound mode", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.tones = 0;
+    window.AudioContext = class {
+      state = "running";
+      createOscillator() {
+        return {
+          frequency: {}, connect() {}, addEventListener() {}, stop() {},
+          start() { window.tones++; },
+        };
+      }
+      createGain() {
+        return {
+          gain: { setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
+          connect() {},
+        };
+      }
+    };
+  });
+  const start = Date.parse("2027-07-01T12:00:00Z");
+  await page.clock.setFixedTime(start);
+  await page.goto("/dashboard");
+  const timer = tile(page, "25-Minute Focus");
+  const mode = timer.getByRole("button", { name: /^Sound for 25-Minute Focus/ });
+  await mode.click();
+  await expect(mode).toHaveAttribute("data-sound-mode", "tick");
+  await timer.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(timer.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+  await page.clock.setFixedTime(start + 25 * 60_000 - 3000);
+  const mute = page.getByRole("button", { name: "Mute Dashboard", exact: true });
+  await expect(mute).toHaveAttribute("data-audible", "true");
+  await mute.click();
+  const unmute = page.getByRole("button", { name: "Unmute Dashboard", exact: true });
+  await expect(unmute).toHaveAttribute("data-muted", "true");
+  await expect(unmute).toHaveAttribute("data-audible", "false");
+  const tones = await page.evaluate(() => window.tones);
+  expect(tones).toBeGreaterThan(0);
+  await page.clock.setFixedTime(start + 25 * 60_000 + 1000);
+  await expect(timer.locator(".dashboard-status")).toHaveText("Complete");
+  expect(await page.evaluate(() => window.tones)).toBe(tones);
+  await page.reload();
+  await expect(unmute).toBeVisible();
+  await expect(mode).toHaveAttribute("data-sound-mode", "tick");
+});
+
+test("long date countdowns fit on one line and grow when the tile gets wider", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.clock.setFixedTime(new Date("2027-01-01T12:00:00Z"));
+  await page.goto("/dashboard");
+  await openEditor(page, "Date Countdown");
+  await page.getByLabel("Timezone").selectOption("UTC");
+  await page.getByLabel("Target date and time").fill("9876-11-29T21:59");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  const timer = tile(page, "Date Countdown").getByRole("timer");
+  await expect(timer).toHaveText("7849y 10mo 28d 9h 59m");
+  const dimensions = () => timer.evaluate(element => ({
+    fits: element.firstElementChild.getBoundingClientRect().width <= element.clientWidth + 1,
+    fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+  }));
+  await timer.evaluate(element => { element.closest(".dashboard-card").style.width = "150px"; });
+  await expect.poll(async () => (await dimensions()).fits).toBe(true);
+  await expect.poll(() => timer.evaluate(element => element.style.fontSize)).not.toBe("");
+  const narrow = (await dimensions()).fontSize;
+  await page.setViewportSize({ width: 740, height: 720 });
+  await timer.evaluate(element => { element.closest(".dashboard-card").style.removeProperty("width"); });
+  await expect.poll(async () => (await dimensions()).fontSize).toBeGreaterThan(narrow);
+  await expect.poll(async () => (await dimensions()).fits).toBe(true);
 });

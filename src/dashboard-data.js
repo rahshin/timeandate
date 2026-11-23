@@ -1,4 +1,5 @@
 import { dashboardCountdown, dashboardSessionInterval } from "./dashboard-sessions.js";
+import { resolveDashboardTemplate } from "./dashboard-templates.js";
 import { advanceSession, createTimerSession, sessionStatistics, updateSession } from "./timer-session.js";
 
 export const cardPrefix = "timeandate.dashboard.";
@@ -40,6 +41,13 @@ export function migrateDashboardData(storage) {
     if (typeof card?.name === "string" && Number.isFinite(card.created)) data.cards[key] = card;
   }
   return data;
+}
+
+function starterCards(locale, zone, now) {
+  const template = resolveDashboardTemplate(locale);
+  return Object.fromEntries(template({ zone, now }).map(({ id, ...card }) => [
+    cardPrefix + "starter-" + id, { ...card, created: now, dashboardId: originalId },
+  ]));
 }
 
 export function savePreset(data, id, type, name, session) {
@@ -154,7 +162,7 @@ export function openDashboardData(onChange) {
   let volatile = false;
   let needsMigration = false;
   const exclusive = work => locks ? locks.request(transactionLock, work) : work();
-  function read() {
+  function read({ initialize = false } = {}) {
     if (volatile) return structuredClone(state);
     try {
       const raw = localStorage.getItem(dataKey);
@@ -166,7 +174,13 @@ export function openDashboardData(onChange) {
         }
         volatile = true;
       }
-      return migrateDashboardData(localStorage);
+      const data = migrateDashboardData(localStorage);
+      if (initialize && needsMigration && localStorage.getItem(legacyBoardsKey) === null &&
+          !Object.keys(localStorage).some(key => key.startsWith(cardPrefix))) {
+        const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        data.cards = starterCards(navigator.language, zone, Date.now());
+      }
+      return data;
     } catch {
       volatile = true;
       return state ? structuredClone(state) : migrateDashboardData([]);
@@ -199,7 +213,7 @@ export function openDashboardData(onChange) {
         }).catch(reject);
       });
     }
-    const next = read();
+    const next = read({ initialize: true });
     const changed = checkpointSessions(next, Date.now(), { cold });
     // Commit the migrated snapshot even when it contains only ready cards and preferences.
     publish(next, changed || needsMigration);
