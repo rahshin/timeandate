@@ -47,6 +47,31 @@
   border-top-color: var(--accent);
 }
 
+.dashboard-card[data-border-state] {
+  position: relative;
+  border-color: transparent;
+  --countdown-border-color: #38bdf8;
+}
+
+.dashboard-countdown-border {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  pointer-events: none;
+  fill: none;
+  stroke-width: 3px;
+  stroke: #475569;
+}
+
+.dashboard-countdown-border path:last-child { stroke: var(--countdown-border-color); }
+.dashboard-card[data-border-state="soon"] { --countdown-border-color: #fbbf24; }
+.dashboard-card[data-border-state="final"] { --countdown-border-color: #fb7185; }
+.dashboard-card:is([data-border-state="paused"], [data-border-state="stopped"]) {
+  --countdown-border-color: #94a3b8;
+}
+.dashboard-card[data-border-state="complete"] { --countdown-border-color: #34d399; }
+
 .dashboard-detail,
 .dashboard-status,
 .dashboard-empty {
@@ -334,18 +359,51 @@
   display: none;
 }
 
-.dashboard-mute[aria-pressed="true"] {
+.dashboard-mute[data-muted="true"] {
   color: var(--accent);
   border-color: var(--accent);
 }
 
-.dashboard-mute[aria-pressed="true"] .dashboard-speaker-waves,
-.dashboard-mute[aria-pressed="false"] .dashboard-speaker-cross {
+.dashboard-mute[data-muted="true"] .dashboard-speaker-waves,
+.dashboard-mute:not([data-muted="true"]) .dashboard-speaker-cross {
   display: none;
 }
 
 .dashboard-timer-fields {
   min-width: 0;
+}
+
+.dashboard-sound-fields {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.dashboard-sound-fields .field[hidden] {
+  display: none;
+}
+
+.dashboard-sound-menu {
+  position-area: block-end span-inline-start;
+  position-try-fallbacks: flip-block, flip-inline;
+  margin-block-start: 0.35rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--panel);
+  color: inherit;
+  box-shadow: 0 0.45rem 1.25rem #0006;
+}
+
+.dashboard-sound-menu fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 0.55rem;
+}
+
+.dashboard-sound-menu p {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .dashboard-advanced > summary,

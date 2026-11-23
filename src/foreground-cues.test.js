@@ -54,6 +54,49 @@ test("short repetitions skip the first second, never speak zero, and chime on na
   assert.equal(tones, 1);
 });
 
+test("final-seconds ticks play once per audible second and keep the completion chime", async () => {
+  const voice = fakeSpeech();
+  const sounds = [];
+  const cues = createForegroundCues({
+    speech: voice.speech, tone: () => sounds.push("chime"), tick: () => sounds.push("tick"),
+  });
+  const row = running("Stretch", {
+    kind: "interval", durationMs: 5000, finalSecondsEnabled: true, finalSeconds: 3, finalSecondsSound: "tick",
+  });
+  cues.update([row], 0);
+  cues.update([row], 1000);
+  assert.deepEqual(sounds, []);
+  cues.update([row], 2000);
+  cues.update([row], 2125);
+  cues.update([{ ...row, muted: true }], 3000);
+  cues.update([row], 4000);
+  cues.update([row], 5000);
+  await settle();
+  assert.deepEqual(sounds, ["tick", "tick", "chime"]);
+  assert.deepEqual(voice.calls, []);
+});
+
+test("countdowns can tick before completion and independently choose the sound at zero", async () => {
+  for (const completionSound of ["silent", "chime", "speech"]) {
+    const voice = fakeSpeech();
+    const sounds = [];
+    const cues = createForegroundCues({
+      speech: voice.speech, tone: () => sounds.push("chime"), tick: () => sounds.push("tick"),
+    });
+    const row = running("Pasta", {
+      durationMs: 3000, finalSecondsEnabled: true, finalSeconds: 1, finalSecondsSound: "tick", completionSound,
+    });
+    cues.update([row], 0);
+    cues.update([row], 2000);
+    cues.update([row], 3000);
+    cues.update([row], 3125);
+    await settle();
+    assert.deepEqual(sounds, completionSound === "chime" ? ["tick", "chime"] : ["tick"]);
+    assert.deepEqual(voice.calls, completionSound === "speech" ? ["Pasta complete"] : []);
+    voice.end();
+  }
+});
+
 test("preparation identifies the timer and drops a missed number", async () => {
   const voice = fakeSpeech();
   const cues = createForegroundCues({ speech: voice.speech, tone() {} });

@@ -8,7 +8,7 @@ function compareCues(a, b) {
     a.key.localeCompare(b.key);
 }
 
-export function createForegroundCues({ speech, tone }) {
+export function createForegroundCues({ speech, tone, tick }) {
   let previous = new Map();
   const seen = new Map();
   const pending = new Map();
@@ -32,6 +32,7 @@ export function createForegroundCues({ speech, tone }) {
   function update(rows, now) {
     const next = new Map();
     let signalDue = false;
+    let tickDue = false;
     for (const row of rows) {
       const session = advanceSession(row.session, now);
       next.set(row.key, { ...row, session });
@@ -40,7 +41,6 @@ export function createForegroundCues({ speech, tone }) {
       const { event, following, signal } = foregroundCue(
         before?.muted ? undefined : before?.session, session, row.label, now);
       signalDue ||= signal;
-      if (!speech) continue;
       for (const candidate of [event, following]) {
         if (!candidate) continue;
         const slot = JSON.stringify([row.key, Boolean(candidate.phase)]);
@@ -48,6 +48,12 @@ export function createForegroundCues({ speech, tone }) {
         const spoken = seen.get(slot);
         const held = pending.get(slot);
         if (spoken?.runId === cue.runId && spoken.id === cue.id) continue;
+        if (candidate.sound === "tick") {
+          seen.set(slot, cue);
+          tickDue = true;
+          continue;
+        }
+        if (!speech) continue;
         if (!held || held.expires <= now || !cueStillApplies(held, next.get(row.key)) ||
             cue.priority >= held.priority) pending.set(slot, cue);
       }
@@ -71,6 +77,7 @@ export function createForegroundCues({ speech, tone }) {
       else pending.delete(cue.slot);
     }
     if (signalDue) tone();
+    else if (tickDue) tick?.();
     const cue = ranked[0];
     if (!cue || (current && !preempt)) return;
 

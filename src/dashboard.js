@@ -1,6 +1,8 @@
 import "./dashboard.css";
-import { dashboardCountdown, dashboardSessionInterval } from "./dashboard-sessions.js";
-import { playTone, unlockTone } from "./timeandate/audio.js";
+import {
+  dashboardCountdown, dashboardSessionInterval, finalSecondsChoices, finalSecondsMode, finalSecondsSettings,
+} from "./dashboard-sessions.js";
+import { playTick, playTone, unlockTone } from "./timeandate/audio.js";
 import {
   clockFormatters, createDateTimer, dateCountdownDisplay, dateCountdownShortcut, dateCountdownUsesAutomaticSeconds,
   fillTimeZones, validDateTimer,
@@ -101,10 +103,14 @@ let localData;
 let activeId;
 const platform = foregroundPlatform();
 const wake = createWakeController(platform.requestWake);
+const runSound = new Map();
 const repository = openDashboardData((next, previous, commandKey) => {
   dashboards = next.dashboards;
   stored = new Map(Object.entries(next.cards));
   localData = next;
+  for (const [key, settings] of runSound) {
+    if (next.cards[key]?.value?.runId !== settings.runId) runSound.delete(key);
+  }
   if (previous) window.dispatchEvent(new CustomEvent("dashboarddata", { detail: { previous, commandKey } }));
 });
 
@@ -609,8 +615,30 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       dashboards.boards.some(board => board.name.length > 24);
   }
 
+  const countdownBorders = new ResizeObserver(entries => {
+    for (const { target, contentRect: { width, height } } of entries) {
+      const edge = 1.5;
+      if (width <= edge * 2 || height <= edge * 2) continue;
+      const right = width - edge;
+      const bottom = height - edge;
+      const radius = Math.min(
+        parseFloat(getComputedStyle(target.parentElement).borderTopLeftRadius) - edge,
+        width / 2 - edge,
+        height / 2 - edge,
+      );
+      const arc = `A ${radius} ${radius} 0 0 1`;
+      const outline = `M ${width / 2} ${edge}
+        H ${right - radius} ${arc} ${right} ${edge + radius}
+        V ${bottom - radius} ${arc} ${right - radius} ${bottom}
+        H ${edge + radius} ${arc} ${edge} ${bottom - radius}
+        V ${edge + radius} ${arc} ${edge + radius} ${edge} Z`;
+      for (const path of target.children) path.setAttribute("d", outline);
+    }
+  });
+
   function addCard(key, record, path, definition = savedDefinition(record)) {
     const isClock = record.type === "clock";
+    const soundMenuId = !path && sessionDefinition(record.type) ? `sound-${crypto.randomUUID()}` : "";
     const hasSeconds = isClock || definition === dateCountdown;
     let formats;
     let formatsShowSeconds;
@@ -621,6 +649,9 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     card.dataset.cardKey = key;
     card.dataset.cardType = record.type;
     card.innerHTML = `
+      ${definition === dashboardCountdown ? `<svg class="dashboard-countdown-border" aria-hidden="true">
+        <path></path><path pathLength="1" stroke-dasharray="0 1"></path>
+      </svg>` : ""}
       <div class="dashboard-card-heading">
         <h2 tabindex="-1"></h2>
         <div class="dashboard-card-controls">
@@ -632,6 +663,16 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
             <path class="dashboard-speaker-cross" d="m16 9 6 6m0-6-6 6"/>
           </svg>
         </button>`}
+        ${soundMenuId ? `<div class="dashboard-sound-menu" id="${soundMenuId}" popover>
+          <fieldset><legend>Final seconds</legend>
+            ${Object.entries(finalSecondsChoices).map(([mode, name]) => `
+              <label class="dashboard-checkbox">
+                <input type="radio" name="${soundMenuId}" value="${mode}"> ${name}
+              </label>`).join("")}
+          </fieldset>
+          <label class="dashboard-checkbox"><input type="checkbox" name="muteRun"> Mute all sounds</label>
+          <p>Changes apply to this run.</p>
+        </div>` : ""}
         ${!path && definition.toggle ? `<a class="dashboard-icon dashboard-edit" data-route>${penIcon}</a>` : ""}
         ${!path ? '<button type="button" class="secondary dashboard-icon dashboard-remove">×</button>' : ""}
         </div>
@@ -648,15 +689,34 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     const detail = card.querySelector(".dashboard-detail");
     const clock = card.querySelector(".dashboard-clock");
     const status = card.querySelector(".dashboard-status");
+    const border = card.querySelector(".dashboard-countdown-border");
+    if (border) countdownBorders.observe(border);
     const actions = card.querySelector(".dashboard-actions");
     const label = record.name || (isClock ? zone.split("/").at(-1) : definition.name);
     title.textContent = label;
     if (isClock) detail.textContent = zone;
     const mute = card.querySelector(".dashboard-mute");
+    const soundMenu = soundMenuId ? card.querySelector(".dashboard-sound-menu") : null;
+    const soundModes = soundMenu?.querySelectorAll('input[type="radio"]');
+    const muteRun = soundMenu?.querySelector('[name="muteRun"]');
+    if (soundMenu) {
+      soundMenu.onchange = event => {
+        const current = stored.get(key)?.value;
+        if (!current?.runId || !["running", "paused"].includes(advanceSession(current, Date.now()).status)) return;
+        const settings = { ...runSound.get(key), runId: current.runId };
+        if (event.target === muteRun) settings.muted = muteRun.checked;
+        else settings.mode = event.target.value;
+        runSound.set(key, settings);
+        unlockTone();
+        redraw();
+        updateForeground();
+      };
+    }
     const linkedMute = () => dashboards.mutedLinkedTimers?.[key] === true;
     if (mute) {
       mute.setAttribute("aria-label", `Mute alerts for ${label}`);
       mute.onclick = () => {
+        if (mute.hasAttribute("popovertarget")) return;
         const id = activeId;
         void repository.change(data => {
           if (path) {
@@ -792,13 +852,32 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         if (status.textContent !== date) status.textContent = date;
         return;
       }
-      const muted = path ? linkedMute() : current.muted === true;
-      const pressed = String(muted);
-      if (mute.getAttribute("aria-pressed") !== pressed) {
-        mute.setAttribute("aria-pressed", pressed);
-        mute.title = muted ? "Unmute timer alerts" : "Mute timer alerts";
-      }
       const view = definition.describe(current.value, now);
+      const settings = runSound.get(key);
+      const muted = path ? linkedMute() : (settings?.muted ?? current.muted === true);
+      const pressed = String(muted);
+      const menuAvailable = soundMenu && current.value.runId &&
+        (view.status.startsWith("Running") || view.status.startsWith("Paused"));
+      if (mute.dataset.muted !== pressed || mute.hasAttribute("popovertarget") !== Boolean(menuAvailable)) {
+        mute.dataset.muted = pressed;
+        if (menuAvailable) {
+          mute.setAttribute("popovertarget", soundMenuId);
+          mute.removeAttribute("aria-pressed");
+          mute.setAttribute("aria-label", `Sound for ${label}${muted ? ", muted" : ""}`);
+          mute.title = "Sound settings";
+        } else {
+          if (mute.hasAttribute("popovertarget")) soundMenu.hidePopover();
+          mute.removeAttribute("popovertarget");
+          mute.setAttribute("aria-pressed", pressed);
+          mute.setAttribute("aria-label", `Mute alerts for ${label}`);
+          mute.title = muted ? "Unmute timer alerts" : "Mute timer alerts";
+        }
+      }
+      if (menuAvailable) {
+        const mode = settings?.mode ?? finalSecondsMode(current.value.config);
+        for (const input of soundModes) input.checked = input.value === mode;
+        muteRun.checked = muted;
+      }
       const changed = previousStatus?.startsWith("Running") && previousStatus !== view.status &&
         (view.status.startsWith("Complete") || view.status.startsWith("Running"));
       previousStatus = view.status;
@@ -807,7 +886,17 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       if (clock.textContent !== view.display) clock.textContent = view.display;
       const statusText = current.value.recovered && view.status.startsWith("Paused")
         ? view.status.replace("Paused", "Restored paused") : view.status;
-      if (status.textContent !== statusText) status.textContent = statusText;
+      const cue = view.border?.label;
+      const visibleStatus = cue ? `${statusText} · ${cue}` : statusText;
+      if (status.textContent !== visibleStatus) status.textContent = visibleStatus;
+      if (border) {
+        const { fraction, state } = view.border;
+        if (card.dataset.borderState !== state) card.dataset.borderState = state;
+        const dash = `${fraction} 1`;
+        if (border.lastElementChild.getAttribute("stroke-dasharray") !== dash) {
+          border.lastElementChild.setAttribute("stroke-dasharray", dash);
+        }
+      }
       const running = view.status.startsWith("Running");
       card.dataset.running = String(running);
       if (toggle) {
@@ -822,7 +911,8 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       }
       if (announce && changed) return {
         text: `${label}. ${view.status}.`,
-        audible: !muted && !current.value.config?.finalSecondsEnabled,
+        audible: !muted && current.value.config?.completionSound === undefined &&
+          (settings?.mode ? settings.mode === "off" : !current.value.config?.finalSecondsEnabled),
       };
     });
     grid.append(card);
@@ -912,6 +1002,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     wasVisible = false;
     announcement.textContent = "";
     cards.clear();
+    countdownBorders.disconnect();
     grid.replaceChildren();
     // Standalone timers have their own routes and storage, independent of dashboard cards.
     const linkedBoard = dashboards.boards.find(board => board.id === originalId) ?? dashboards.boards[0];
@@ -1016,6 +1107,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
   const cues = createForegroundCues({
     speech: platform.speech,
     tone: playTone,
+    tick: playTick,
   });
   let cueBoard;
 
@@ -1033,11 +1125,14 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     for (const [key, record] of stored) {
       const definition = sessionDefinition(record.type);
       if (!definition || boardId(record) !== activeId || !record.value?.config) continue;
-      const config = record.value.config;
+      const settings = runSound.get(key);
+      const config = settings?.mode
+        ? { ...record.value.config, ...finalSecondsSettings(settings.mode), finalSeconds: record.value.config.finalSeconds ?? 5 }
+        : record.value.config;
       if (config.keepAwake && advanceSession(record.value, now).status === "running") awake = true;
       if (hasForegroundCues(config)) {
         rows.push({ key, label: record.name || definition.name,
-          muted: record.muted === true, session: record.value });
+          muted: settings?.muted ?? record.muted === true, session: { ...record.value, config } });
       }
     }
     cues.update(rows, now);
@@ -1045,8 +1140,8 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
   }
 
   function enableSound() {
-    if (sound.checked || [...stored.values()].some(record =>
-      boardId(record) === activeId && !record.muted && record.value?.config?.finalSecondsEnabled)) unlockTone();
+    if (sound.checked || [...stored.values()].some(record => boardId(record) === activeId &&
+      (record.value?.config?.finalSecondsEnabled || record.value?.config?.completionSound === "chime"))) unlockTone();
     updateForeground(true);
   }
 
@@ -1087,6 +1182,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       window.removeEventListener("focus", resetAnnouncements);
       window.removeEventListener("blur", resetAnnouncements);
       clearInterval(cueTick);
+      countdownBorders.disconnect();
       cues.clear();
       wake.update(false);
     },

@@ -10,6 +10,47 @@ const statuses = { idle: "Ready", running: "Running", paused: "Paused", complete
 const phases = { activity: "Repetition", break: "Rest after repetition", preparation: "Prepare for repetition" };
 const primary = { start: "Start", pause: "Pause", resume: "Resume" };
 
+export const finalSecondsChoices = { off: "Off", tick: "Ticks", speech: "Voice" };
+
+export function finalSecondsMode(config) {
+  return config.finalSecondsEnabled ? config.finalSecondsSound ?? "speech" : "off";
+}
+
+export function finalSecondsSettings(mode) {
+  return { finalSecondsEnabled: mode !== "off", finalSecondsSound: mode === "tick" ? "tick" : "speech" };
+}
+
+const finalSecondsFields = `
+  <label class="field">Final seconds
+    <select name="finalSecondsCue">${Object.entries(finalSecondsChoices)
+      .map(([mode, label]) => `<option value="${mode}">${label}</option>`).join("")}</select>
+  </label>
+  <label class="field" data-final-seconds-window hidden>Cue for the last (seconds)
+    <input name="finalSeconds" type="number" min="1" max="${MAX_FINAL_SECONDS}" value="5" required>
+  </label>`;
+
+function initFinalSeconds(fields, config) {
+  fields.finalSecondsCue.value = finalSecondsMode(config);
+  fields.finalSeconds.value = config.finalSeconds ?? DEFAULT_FINAL_SECONDS;
+  updateFinalSecondsField(fields);
+}
+
+function updateFinalSecondsField(fields) {
+  const windowField = fields.finalSeconds.closest?.("[data-final-seconds-window]");
+  if (!windowField) return;
+  windowField.hidden = fields.finalSecondsCue.value === "off";
+  fields.finalSeconds.disabled = windowField.hidden;
+}
+
+function readFinalSeconds(fields) {
+  const { disabled, valueAsNumber: seconds } = fields.finalSeconds;
+  return {
+    ...finalSecondsSettings(fields.finalSecondsCue.value),
+    finalSeconds: disabled && (!Number.isInteger(seconds) || seconds < 1 || seconds > MAX_FINAL_SECONDS)
+      ? DEFAULT_FINAL_SECONDS : seconds,
+  };
+}
+
 function timeFields(prefix, legend, minutes, seconds) {
   return `<fieldset class="dashboard-timer-fields">
     <legend>${legend}</legend>
@@ -20,9 +61,10 @@ function timeFields(prefix, legend, minutes, seconds) {
   </fieldset>`;
 }
 
-const foregroundFields = `
-  <label class="dashboard-checkbox"><input name="speakCompletion" type="checkbox"> Speak completion</label>
-  <label class="dashboard-checkbox"><input name="keepAwake" type="checkbox"> Keep screen awake</label>`;
+const displayFields = `
+  <fieldset class="dashboard-timer-fields"><legend>Display</legend>
+    <label class="dashboard-checkbox"><input name="keepAwake" type="checkbox"> Keep screen awake</label>
+  </fieldset>`;
 
 function initForegroundFields(fields, config) {
   if (fields.speakCompletion) fields.speakCompletion.checked = config.speakCompletion === true;
@@ -46,6 +88,9 @@ function validSession(value, kind) {
       ![0, 3000].includes(config.preparationMs) ||
       (config.speakPhases !== undefined && typeof config.speakPhases !== "boolean") ||
       (config.finalSecondsEnabled !== undefined && typeof config.finalSecondsEnabled !== "boolean") ||
+      (config.finalSecondsSound !== undefined && !["speech", "tick"].includes(config.finalSecondsSound)) ||
+      (config.completionSound !== undefined &&
+        (kind !== "countdown" || !["silent", "chime", "speech"].includes(config.completionSound))) ||
       (config.finalSeconds !== undefined && (!Number.isInteger(config.finalSeconds) ||
         config.finalSeconds < 1 || config.finalSeconds > MAX_FINAL_SECONDS)) ||
       !Object.hasOwn(statuses, value.status) || !Object.hasOwn(phases, value.phase) ||
@@ -103,11 +148,24 @@ function normalizeInterval(value, now) {
 function describe(session, now, detail) {
   const current = advanceSession(session, now);
   const available = sessionActions(current);
+  const remaining = sessionRemaining(current, now);
   const status = statuses[current.status];
   const phase = current.config.kind === "interval" && ["running", "paused"].includes(current.status)
     ? ` · ${phases[current.phase]} ${current.cycle} of ${current.config.repetitions}` : "";
-  return { display: durationDisplay(sessionRemaining(current, now)), status: status + phase,
-    action: primary[available[0]], primaryAction: available[0], available, detail };
+  return { display: durationDisplay(remaining), status: status + phase,
+    action: primary[available[0]], primaryAction: available[0], available, detail,
+    ...(current.config.kind === "countdown" && { border: countdownBorder(current, remaining) }) };
+}
+
+function countdownBorder({ status, config }, remaining) {
+  const duration = config.durationMs;
+  const fraction = Math.max(0, Math.min(1, 1 - remaining / duration));
+  if (status !== "running") return { fraction, state: status };
+  if (remaining <= 5000) return { fraction, state: "final", label: "Final seconds" };
+  if (remaining <= Math.min(duration * 0.2, 60_000)) {
+    return { fraction, state: "soon", label: "Ending soon" };
+  }
+  return { fraction, state: status };
 }
 
 function configureSession(definition, normalize, detail, commands) {
@@ -138,11 +196,25 @@ export const dashboardCountdown = configureSession({
       <label class="field">Minutes <input name="minutes" type="number" min="0" max="59" value="10" required></label>
       <label class="field">Seconds <input name="seconds" type="number" min="0" max="59" value="0" required></label>
     </div>
-    <details class="dashboard-advanced"><summary>Advanced</summary>${foregroundFields}</details>`,
+    <fieldset class="dashboard-timer-fields dashboard-sound-fields"><legend>Sound</legend>
+      ${finalSecondsFields}
+      <label class="field">When time’s up
+        <select name="completionSound">
+          <option value="silent">Silent</option>
+          <option value="chime" selected>Chime</option>
+          <option value="speech">Voice</option>
+        </select>
+      </label>
+    </fieldset>
+    ${displayFields}`,
   init(fields, value) {
+    fields.finalSecondsCue.onchange = () => updateFinalSecondsField(fields);
+    updateFinalSecondsField(fields);
     if (!value) return;
     const { config } = normalizeCountdown(value);
     initForegroundFields(fields, config);
+    initFinalSeconds(fields, config);
+    fields.completionSound.value = config.completionSound ?? (config.speakCompletion ? "speech" : "chime");
     const [hours, minutes, seconds] = durationDisplay(config.durationMs).split(":").map(Number);
     fields.hours.value = hours;
     fields.minutes.value = minutes;
@@ -151,7 +223,10 @@ export const dashboardCountdown = configureSession({
   create(fields) {
     const durationMs = durationMilliseconds(fields.hours.valueAsNumber, fields.minutes.valueAsNumber, fields.seconds.valueAsNumber);
     if (!durationMs) throw new Error("Enter a duration greater than zero.");
-    return createTimerSession({ durationMs, ...foregroundSettings(fields) });
+    return createTimerSession({
+      durationMs, ...foregroundSettings(fields), ...readFinalSeconds(fields),
+      completionSound: fields.completionSound.value,
+    });
   },
   valid: value => validSession(value, "countdown") || isDurationTimer(value),
 }, normalizeCountdown, config => `Duration ${durationDisplay(config.durationMs)}`, { stop: "Stop", reset: "Reset" });
@@ -163,24 +238,23 @@ export const dashboardSessionInterval = configureSession({
     ${timeFields("duration", "Repetition duration", 0, 10)}
     <label class="field">Repetitions <input name="repetitions" type="number" min="1" max="999" value="3" required></label>
     ${timeFields("rest", "Rest duration", 0, 2)}
-    <details class="dashboard-advanced"><summary>Advanced</summary>
+    <fieldset class="dashboard-timer-fields dashboard-sound-fields"><legend>Sound</legend>
+      ${finalSecondsFields}
       <label class="dashboard-checkbox"><input name="preparation" type="checkbox"> Speak 3-second preparation</label>
       <label class="dashboard-checkbox"><input name="speakPhases" type="checkbox"> Speak rest and repetition starts</label>
-      <label class="dashboard-checkbox"><input name="finalSecondsEnabled" type="checkbox"> Speak final-seconds countdown</label>
-      <label class="field">Final-seconds window (seconds)
-        <input name="finalSeconds" type="number" min="1" max="${MAX_FINAL_SECONDS}" value="${DEFAULT_FINAL_SECONDS}" required>
-      </label>
-      ${foregroundFields}
-    </details>`,
+      <label class="dashboard-checkbox"><input name="speakCompletion" type="checkbox"> Announce round and session completion</label>
+    </fieldset>
+    ${displayFields}`,
   init(fields, value) {
+    fields.finalSecondsCue.onchange = () => updateFinalSecondsField(fields);
+    updateFinalSecondsField(fields);
     if (!value) return;
     const { config } = normalizeInterval(value, Date.now());
     initForegroundFields(fields, config);
     fields.repetitions.value = config.repetitions;
     fields.preparation.checked = Boolean(config.preparationMs);
     fields.speakPhases.checked = config.speakPhases === true;
-    fields.finalSecondsEnabled.checked = config.finalSecondsEnabled ?? false;
-    fields.finalSeconds.value = config.finalSeconds ?? DEFAULT_FINAL_SECONDS;
+    initFinalSeconds(fields, config);
     for (const [prefix, ms] of [["duration", config.durationMs], ["rest", config.restMs]]) {
       fields[prefix + "Minutes"].value = Math.floor(ms / 60_000);
       fields[prefix + "Seconds"].value = Math.floor(ms / 1000) % 60;
@@ -194,7 +268,7 @@ export const dashboardSessionInterval = configureSession({
       kind: "interval", durationMs: milliseconds("duration"), restMs: milliseconds("rest"),
       repetitions: fields.repetitions.valueAsNumber, preparation: fields.preparation.checked,
       speakPhases: fields.speakPhases.checked,
-      finalSecondsEnabled: fields.finalSecondsEnabled.checked, finalSeconds: fields.finalSeconds.valueAsNumber,
+      ...readFinalSeconds(fields),
     });
   },
   valid: value => validSession(value, "interval") || Boolean(legacyIntervalTimer(value)),

@@ -38,7 +38,7 @@ test("final-seconds settings survive session commands and reopen for editing", (
     restSeconds: { valueAsNumber: 0 },
     preparation: { checked: true },
     speakPhases: { checked: true },
-    finalSecondsEnabled: { checked: true },
+    finalSecondsCue: { value: "tick" },
     finalSeconds: { valueAsNumber: 7 },
   };
   const ready = dashboardSessionInterval.create(form);
@@ -47,16 +47,20 @@ test("final-seconds settings survive session commands and reopen for editing", (
   assert.equal(saved.phase, "preparation");
   assert.equal(dashboardSessionInterval.valid(saved), true);
   dashboardSessionInterval.init(form, saved);
-  assert.equal(form.finalSecondsEnabled.checked, true);
+  assert.equal(form.finalSecondsCue.value, "tick");
   assert.equal(form.speakPhases.checked, true);
   assert.equal(form.finalSeconds.value, 7);
+
+  delete saved.config.finalSecondsSound;
+  dashboardSessionInterval.init(form, saved);
+  assert.equal(form.finalSecondsCue.value, "speech");
 
   delete saved.config.finalSecondsEnabled;
   delete saved.config.finalSeconds;
   delete saved.config.speakPhases;
   assert.equal(dashboardSessionInterval.valid(saved), true);
   dashboardSessionInterval.init(form, saved);
-  assert.equal(form.finalSecondsEnabled.checked, false);
+  assert.equal(form.finalSecondsCue.value, "off");
   assert.equal(form.speakPhases.checked, false);
   assert.equal(form.finalSeconds.value, 10);
 

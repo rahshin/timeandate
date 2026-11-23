@@ -8,23 +8,35 @@ export const MAX_FINAL_SECONDS = 999 * 60 + 59;
 export function createTimerSession({
   durationMs, repetitions = 1, restMs = 2000, preparation = false,
   finalSecondsEnabled = false, finalSeconds = DEFAULT_FINAL_SECONDS, kind = "countdown",
-  speakCompletion = false, speakPhases = false, keepAwake = false,
+  finalSecondsSound = "speech",
+  completionSound, speakCompletion = false, speakPhases = false, keepAwake = false,
 }) {
   if (!Number.isSafeInteger(durationMs) || durationMs <= 0 ||
       !Number.isSafeInteger(repetitions) || repetitions <= 0 ||
       !Number.isSafeInteger(restMs) || restMs < 0) {
     throw new RangeError("Enter a positive duration and repetition count, and a valid rest duration.");
   }
-  if (kind === "interval" &&
-      (!Number.isInteger(finalSeconds) || finalSeconds < 1 || finalSeconds > MAX_FINAL_SECONDS)) {
+  if (!Number.isInteger(finalSeconds) || finalSeconds < 1 || finalSeconds > MAX_FINAL_SECONDS) {
     throw new RangeError("Enter a final-seconds window within the allowed range.");
+  }
+  if (!["speech", "tick"].includes(finalSecondsSound)) {
+    throw new RangeError("Choose a final-seconds sound.");
   }
   const config = kind === "interval"
     ? {
       kind, durationMs, repetitions, restMs, preparationMs: preparation ? 3000 : 0,
-      finalSecondsEnabled, finalSeconds,
+      finalSecondsEnabled, finalSeconds, finalSecondsSound,
     }
     : { kind: "countdown", durationMs, repetitions: 1, restMs: 0, preparationMs: 0 };
+  if (kind === "countdown") {
+    if (completionSound !== undefined) {
+      if (!["silent", "chime", "speech"].includes(completionSound)) throw new RangeError("Choose a completion sound.");
+      config.completionSound = completionSound;
+    }
+    if (finalSecondsEnabled || finalSeconds !== DEFAULT_FINAL_SECONDS) {
+      Object.assign(config, { finalSecondsEnabled, finalSeconds, finalSecondsSound });
+    }
+  }
   if (speakCompletion) config.speakCompletion = true;
   if (kind === "interval" && speakPhases) config.speakPhases = true;
   if (keepAwake) config.keepAwake = true;

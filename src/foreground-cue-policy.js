@@ -4,7 +4,8 @@ const eventWindow = 2000;
 
 export function hasForegroundCues(config) {
   return config.speakCompletion || config.speakPhases === true ||
-    config.preparationMs || config.finalSecondsEnabled;
+    config.preparationMs || config.finalSecondsEnabled ||
+    config.completionSound === "chime" || config.completionSound === "speech";
 }
 
 function phaseKey(session) {
@@ -36,6 +37,8 @@ function numberCue(session, label, now) {
   const namedText = preparation && seconds === 3 ? `${label}, starting in 3` : `${label}, ${seconds}`;
   return {
     id: `number/${phaseKey(session)}/${seconds}`,
+    finalSeconds,
+    sound: !preparation && config.finalSecondsSound === "tick" ? "tick" : "speech",
     text: (preparation ? seconds === 3 : seconds === first) ? namedText : String(seconds),
     namedText,
     priority: 0,
@@ -78,6 +81,17 @@ export function foregroundCue(before, session, label, now) {
   const phase = Number.isFinite(phaseStart) && phaseCue(session, label, phaseStart);
   const livePhase = phase && now < phase.expires ? phase : undefined;
 
+  if (finished && config.completionSound !== undefined) {
+    const audible = now < session.endedAt + eventWindow;
+    return {
+      signal: audible && config.completionSound === "chime",
+      event: audible && config.completionSound === "speech" ? {
+        id: `finish/${session.endedAt}`, text: `${label} complete`, priority: 3,
+        due: session.endedAt, expires: session.endedAt + eventWindow,
+      } : undefined,
+    };
+  }
+
   if (finished && config.speakCompletion && now < session.endedAt + eventWindow) {
     const skipped = session.skipped > before.skipped;
     return { event: {
@@ -111,5 +125,7 @@ export function foregroundCue(before, session, label, now) {
 export function cueStillApplies(cue, row) {
   return row && !row.muted && row.session.runId === cue.runId &&
     row.session.status !== "paused" && row.session.status !== "stopped" &&
-    (!cue.phase || (row.session.status === "running" && phaseKey(row.session) === cue.phase));
+    (!cue.phase || (row.session.status === "running" && phaseKey(row.session) === cue.phase)) &&
+    (!cue.finalSeconds || (row.session.config.finalSecondsEnabled &&
+      (row.session.config.finalSecondsSound ?? "speech") === cue.sound));
 }
