@@ -39,6 +39,85 @@ test("cleared duration fields submit with zero and repeated submits create one t
   await expect(timer).toBeVisible();
 });
 
+test("countdown border traces elapsed time and follows timer states", async ({ page }) => {
+  const start = Date.parse("2027-01-01T12:00:00Z");
+  const at = seconds => page.clock.setFixedTime(start + seconds * 1000);
+  await at(0);
+  await page.goto("/dashboard");
+  await openEditor(page, "Countdown Timer");
+  await page.getByLabel("Minutes", { exact: true }).fill("0");
+  await page.getByLabel("Seconds", { exact: true }).fill("50");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+
+  const timer = tile(page, "Countdown Timer");
+  const trace = timer.locator(".dashboard-countdown-border path").last();
+  const status = timer.locator(".dashboard-status");
+  await expect(trace).toHaveAttribute("d", /^M /);
+  await expect(trace).toHaveAttribute("stroke-dasharray", "0 1");
+  await timer.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(status).toHaveText("Running");
+  await at(25);
+  await expect(trace).toHaveAttribute("stroke-dasharray", "0.5 1");
+  await expect(trace).toHaveCSS("stroke", "rgb(56, 189, 248)");
+  await timer.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect(status).toHaveText("Paused");
+  await at(35);
+  await expect(trace).toHaveAttribute("stroke-dasharray", "0.5 1");
+  await expect(trace).toHaveCSS("stroke", "rgb(148, 163, 184)");
+  await timer.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect(status).toHaveText("Running");
+  await at(50);
+  await expect(status).toHaveText("Running · Ending soon");
+  await expect(trace).toHaveCSS("stroke", "rgb(251, 191, 36)");
+  await at(55);
+  await expect(status).toHaveText("Running · Final seconds");
+  await expect(trace).toHaveCSS("stroke", "rgb(251, 113, 133)");
+  await at(60);
+  await expect(status).toHaveText("Complete");
+  await expect(trace).toHaveAttribute("stroke-dasharray", "1 1");
+  await expect(trace).toHaveCSS("stroke", "rgb(52, 211, 153)");
+  await timer.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(trace).toHaveAttribute("stroke-dasharray", "0 1");
+});
+
+test("countdown and interval tiles cycle saved sound modes before and during a run", async ({ page }) => {
+  await page.goto("/dashboard");
+  for (const type of ["Countdown Timer", "Interval Timer"]) {
+    await openEditor(page, type);
+    const mode = page.getByRole("combobox", { name: "Sound mode" });
+    const cueWindow = page.locator('input[name="finalSeconds"]');
+    await expect(mode).toHaveValue("off");
+    await expect(cueWindow).toBeHidden();
+    await mode.selectOption("tick");
+    await expect(cueWindow).toHaveValue("5");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+
+    const timer = tile(page, type);
+    const sound = timer.getByRole("button", { name: new RegExp(`^Sound for ${type}`) });
+    await expect(sound).toHaveAttribute("data-sound-mode", "tick");
+    await sound.hover();
+    await expect.poll(() => sound.evaluate(button => getComputedStyle(button, "::after").visibility)).toBe("visible");
+    await expect(sound).toHaveAttribute("data-tooltip", /Ticks\. Click for Voice\./);
+    await sound.click();
+    await expect(sound).toHaveAttribute("data-sound-mode", "speech");
+    await expect(sound).toHaveAttribute("data-tooltip", /Voice\. Click for Off\./);
+    await timer.getByRole("button", { name: "Start", exact: true }).click();
+    await expect(timer.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+    await sound.click();
+    await expect(sound).toHaveAttribute("data-sound-mode", "off");
+    await sound.click();
+    await expect(sound).toHaveAttribute("data-sound-mode", "tick");
+    await timer.getByRole("button", { name: "Stop", exact: true }).click();
+    const edit = timer.getByRole("link", { name: `Edit ${type}` });
+    await edit.hover();
+    await expect.poll(() => edit.evaluate(link => getComputedStyle(link, "::after").visibility)).toBe("visible");
+    await expect(edit).toHaveAttribute("data-tooltip", `Edit ${type}`);
+    await edit.click();
+    await expect(mode).toHaveValue("tick");
+    await page.getByRole("link", { name: "Cancel", exact: true }).click();
+  }
+});
+
 test("world clock seconds persist and focus survives a dashboard update from another tab", async ({ page, context }) => {
   await page.goto("/dashboard");
   await addClock(page, "UTC Clock");

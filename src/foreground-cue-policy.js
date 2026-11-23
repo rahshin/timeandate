@@ -3,8 +3,10 @@ import { advanceSession } from "./timer-session.js";
 const eventWindow = 2000;
 
 export function hasForegroundCues(config) {
+  if (config.soundMode !== undefined) return config.soundMode !== "off";
   return config.speakCompletion || config.speakPhases === true ||
-    config.preparationMs || config.finalSecondsEnabled;
+    config.preparationMs || config.finalSecondsEnabled ||
+    config.completionSound === "chime" || config.completionSound === "speech";
 }
 
 function phaseKey(session) {
@@ -12,10 +14,11 @@ function phaseKey(session) {
 }
 
 function phaseCue(session, label, at) {
-  if (session.config.speakPhases !== true || session.status !== "running" ||
+  if (!(session.config.soundMode || session.config.speakPhases) || session.status !== "running" ||
       session.phase === "preparation") return;
   return {
     id: `phase/${phaseKey(session)}`,
+    sound: session.config.soundMode === "tick" ? "tick" : "speech",
     text: session.phase === "break" ? `${label}, rest` : `${label}, start repetition ${session.cycle}`,
     priority: 1,
     due: at,
@@ -29,13 +32,17 @@ function numberCue(session, label, now) {
   const { phase, config, endAt } = session;
   const seconds = Math.ceil((endAt - now) / 1000);
   const preparation = phase === "preparation";
-  const finalSeconds = phase === "activity" && config.finalSecondsEnabled &&
-    seconds <= config.finalSeconds && seconds * 1000 < config.durationMs;
+  const window = config.finalSeconds ?? 5;
+  const finalSeconds = phase === "activity" && (config.soundMode || config.finalSecondsEnabled) &&
+    seconds <= window && seconds * 1000 < config.durationMs;
   if (!preparation && !finalSeconds) return;
-  const first = Math.min(config.finalSeconds, Math.ceil(config.durationMs / 1000) - 1);
+  const first = Math.min(window, Math.ceil(config.durationMs / 1000) - 1);
   const namedText = preparation && seconds === 3 ? `${label}, starting in 3` : `${label}, ${seconds}`;
   return {
     id: `number/${phaseKey(session)}/${seconds}`,
+    finalSeconds,
+    sound: config.soundMode === "tick" || (!config.soundMode && !preparation && config.finalSecondsSound === "tick")
+      ? "tick" : "speech",
     text: (preparation ? seconds === 3 : seconds === first) ? namedText : String(seconds),
     namedText,
     priority: 0,
@@ -54,6 +61,7 @@ function enteredByCommand(before, session) {
 }
 
 export function foregroundCue(before, session, label, now) {
+  if (session.config.soundMode === "off") return {};
   const sameRun = before && before.runId === session.runId;
   let latest;
   let repetition;
@@ -75,8 +83,22 @@ export function foregroundCue(before, session, label, now) {
   const phaseStart = matchingPhase ? latest.at : enteredByCommand(before, session)
     ? session.endAt - (session.phase === "break" ? config.restMs : config.durationMs)
     : undefined;
-  const phase = Number.isFinite(phaseStart) && phaseCue(session, label, phaseStart);
+  const phase = config.kind === "interval" && Number.isFinite(phaseStart) && phaseCue(session, label, phaseStart);
   const livePhase = phase && now < phase.expires ? phase : undefined;
+
+  const completionSound = config.soundMode === "tick" ? "chime"
+    : config.soundMode === "speech" ? "speech" : config.completionSound;
+  if (finished && completionSound !== undefined) {
+    const audible = now < session.endedAt + eventWindow;
+    const skipped = session.skipped > before.skipped && boundary?.at !== session.endedAt;
+    return {
+      signal: audible && completionSound === "chime" && boundary?.at === session.endedAt,
+      event: audible && completionSound === "speech" ? {
+        id: `finish/${session.endedAt}`, text: skipped ? `${label}, session finished` : `${label} complete`, priority: 3,
+        due: session.endedAt, expires: session.endedAt + eventWindow,
+      } : undefined,
+    };
+  }
 
   if (finished && config.speakCompletion && now < session.endedAt + eventWindow) {
     const skipped = session.skipped > before.skipped;
@@ -89,10 +111,10 @@ export function foregroundCue(before, session, label, now) {
     }, signal: boundary?.at === session.endedAt && config.finalSecondsEnabled };
   }
 
-  const signal = Boolean(boundary && config.finalSecondsEnabled &&
+  const signal = Boolean(boundary && (config.soundMode === "tick" || (!config.soundMode && config.finalSecondsEnabled)) &&
     (!finished || boundary.at === session.endedAt));
   if (session.status !== "paused" && session.status !== "stopped" &&
-      !finished && boundary && config.speakCompletion) {
+      !finished && boundary && (config.soundMode === "speech" || (!config.soundMode && config.speakCompletion))) {
     return { event: {
       id: `repetition/${boundary.cycle}/${boundary.at}`,
       text: `${label}, repetition ${boundary.cycle} complete`,
@@ -110,6 +132,9 @@ export function foregroundCue(before, session, label, now) {
 
 export function cueStillApplies(cue, row) {
   return row && !row.muted && row.session.runId === cue.runId &&
+    row.session.config.soundMode === cue.soundMode &&
     row.session.status !== "paused" && row.session.status !== "stopped" &&
-    (!cue.phase || (row.session.status === "running" && phaseKey(row.session) === cue.phase));
+    (!cue.phase || (row.session.status === "running" && phaseKey(row.session) === cue.phase)) &&
+    (!cue.finalSeconds || row.session.config.soundMode || (row.session.config.finalSecondsEnabled &&
+      (row.session.config.finalSecondsSound ?? "speech") === cue.sound));
 }

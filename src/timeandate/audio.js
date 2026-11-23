@@ -12,15 +12,23 @@ export function unlockTone() {
 }
 
 export function playTone() {
+  playSound(523.25, 0.36, 0.03);
+}
+
+export function playTick() {
+  playSound(880, 0.07, 0.005);
+}
+
+function playSound(frequency, duration, attack) {
   try {
     if (context?.state !== "running") return;
     const oscillator = context.createOscillator();
     const volume = context.createGain();
     const start = context.currentTime;
-    oscillator.frequency.value = 523.25;
+    oscillator.frequency.value = frequency;
     volume.gain.setValueAtTime(0, start);
-    volume.gain.linearRampToValueAtTime(0.10, start + 0.03);
-    volume.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+    volume.gain.linearRampToValueAtTime(0.10, start + attack);
+    volume.gain.exponentialRampToValueAtTime(0.001, start + duration - 0.01);
     oscillator.connect(volume);
     volume.connect(context.destination);
     oscillator.addEventListener("ended", () => {
@@ -28,7 +36,7 @@ export function playTone() {
       volume.disconnect();
     }, { once: true });
     oscillator.start(start);
-    oscillator.stop(start + 0.36);
+    oscillator.stop(start + duration);
   } catch {
     // Audio failures do not affect the countdown.
   }
