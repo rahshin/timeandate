@@ -767,7 +767,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         edit = card.querySelector(".dashboard-edit");
         edit.href = boardUrl(activeId, editPath + key.slice(prefix.length));
         edit.setAttribute("aria-label", `Edit ${label}`);
-        edit.title = `Edit ${label}`;
+        edit.dataset.tooltip = `Edit ${label}`;
       }
       const remove = card.querySelector(".dashboard-remove");
       if (hasSeconds) {
@@ -783,7 +783,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         };
       }
       remove.setAttribute("aria-label", `Remove ${label}`);
-      remove.title = `Remove ${label}`;
+      remove.dataset.tooltip = `Remove ${label}`;
       remove.onclick = async () => {
         const id = boardId(record);
         let blocked = unfinishedCards(localData, [key], Date.now());
@@ -849,13 +849,13 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
           mute.dataset.soundMode = state;
           const modes = Object.keys(timerSoundChoices);
           const next = modes[(modes.indexOf(state) + 1) % modes.length];
-          mute.title = `Sound for ${label}: ${timerSoundChoices[state]}. Click for ${timerSoundChoices[next]}.`;
-          mute.setAttribute("aria-label", mute.title);
+          mute.dataset.tooltip = `Sound for ${label}: ${timerSoundChoices[state]}. Click for ${timerSoundChoices[next]}.`;
+          mute.setAttribute("aria-label", mute.dataset.tooltip);
         }
       } else if (mute.dataset.muted !== pressed) {
         mute.dataset.muted = pressed;
         mute.setAttribute("aria-pressed", pressed);
-        mute.title = muted ? "Unmute timer alerts" : "Mute timer alerts";
+        mute.dataset.tooltip = muted ? "Unmute timer alerts" : "Mute timer alerts";
       }
       const changed = previousStatus?.startsWith("Running") && previousStatus !== view.status &&
         (view.status.startsWith("Complete") || view.status.startsWith("Running"));

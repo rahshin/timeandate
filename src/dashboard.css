@@ -329,6 +329,7 @@
 }
 
 .dashboard-card-controls {
+  position: relative;
   display: flex;
   align-items: start;
   gap: 0.25rem;
@@ -357,6 +358,49 @@
 
 .dashboard-icon[hidden] {
   display: none;
+}
+
+.dashboard-icon[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  inset-block-end: calc(100% + 0.35rem);
+  inset-inline-end: 0;
+  width: max-content;
+  max-width: min(15rem, calc(100vw - 3rem));
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  background: var(--panel);
+  color: var(--text, #eff4fe);
+  box-shadow: 0 0.25rem 0.7rem #0006;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  text-align: start;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.dashboard-card-controls:focus-within {
+  z-index: 1;
+}
+
+.dashboard-icon[data-tooltip]:focus-visible::after {
+  visibility: visible;
+}
+
+@media (hover: hover) {
+  .dashboard-card-controls:hover {
+    z-index: 1;
+  }
+
+  .dashboard-icon[data-tooltip]:hover::after {
+    visibility: visible;
+  }
+
+  .dashboard-card-controls:has(.dashboard-icon:hover) .dashboard-icon:focus-visible:not(:hover)::after {
+    visibility: hidden;
+  }
 }
 
 .dashboard-mute:is([data-muted="true"], [data-sound-mode="off"]) {

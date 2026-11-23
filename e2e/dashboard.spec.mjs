@@ -95,8 +95,12 @@ test("countdown and interval tiles cycle saved sound modes before and during a r
     const timer = tile(page, type);
     const sound = timer.getByRole("button", { name: new RegExp(`^Sound for ${type}`) });
     await expect(sound).toHaveAttribute("data-sound-mode", "tick");
+    await sound.hover();
+    await expect.poll(() => sound.evaluate(button => getComputedStyle(button, "::after").visibility)).toBe("visible");
+    await expect(sound).toHaveAttribute("data-tooltip", /Ticks\. Click for Voice\./);
     await sound.click();
     await expect(sound).toHaveAttribute("data-sound-mode", "speech");
+    await expect(sound).toHaveAttribute("data-tooltip", /Voice\. Click for Off\./);
     await timer.getByRole("button", { name: "Start", exact: true }).click();
     await expect(timer.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
     await sound.click();
@@ -104,7 +108,11 @@ test("countdown and interval tiles cycle saved sound modes before and during a r
     await sound.click();
     await expect(sound).toHaveAttribute("data-sound-mode", "tick");
     await timer.getByRole("button", { name: "Stop", exact: true }).click();
-    await timer.getByRole("link", { name: `Edit ${type}` }).click();
+    const edit = timer.getByRole("link", { name: `Edit ${type}` });
+    await edit.hover();
+    await expect.poll(() => edit.evaluate(link => getComputedStyle(link, "::after").visibility)).toBe("visible");
+    await expect(edit).toHaveAttribute("data-tooltip", `Edit ${type}`);
+    await edit.click();
     await expect(mode).toHaveValue("tick");
     await page.getByRole("link", { name: "Cancel", exact: true }).click();
   }
