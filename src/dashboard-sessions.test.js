@@ -37,8 +37,7 @@ test("final-seconds settings survive session commands and reopen for editing", (
     restMinutes: { valueAsNumber: 0 },
     restSeconds: { valueAsNumber: 0 },
     preparation: { checked: true },
-    speakPhases: { checked: true },
-    finalSecondsCue: { value: "tick" },
+    soundMode: { value: "tick" },
     finalSeconds: { valueAsNumber: 7 },
   };
   const ready = dashboardSessionInterval.create(form);
@@ -47,21 +46,20 @@ test("final-seconds settings survive session commands and reopen for editing", (
   assert.equal(saved.phase, "preparation");
   assert.equal(dashboardSessionInterval.valid(saved), true);
   dashboardSessionInterval.init(form, saved);
-  assert.equal(form.finalSecondsCue.value, "tick");
-  assert.equal(form.speakPhases.checked, true);
+  assert.equal(form.soundMode.value, "tick");
   assert.equal(form.finalSeconds.value, 7);
 
-  delete saved.config.finalSecondsSound;
+  delete saved.config.soundMode;
+  saved.config.finalSecondsEnabled = true;
   dashboardSessionInterval.init(form, saved);
-  assert.equal(form.finalSecondsCue.value, "speech");
+  assert.equal(form.soundMode.value, "speech");
 
   delete saved.config.finalSecondsEnabled;
   delete saved.config.finalSeconds;
-  delete saved.config.speakPhases;
+  saved.config.preparationMs = 0;
   assert.equal(dashboardSessionInterval.valid(saved), true);
   dashboardSessionInterval.init(form, saved);
-  assert.equal(form.finalSecondsCue.value, "off");
-  assert.equal(form.speakPhases.checked, false);
+  assert.equal(form.soundMode.value, "off");
   assert.equal(form.finalSeconds.value, 10);
 
   form.finalSeconds.valueAsNumber = 0;

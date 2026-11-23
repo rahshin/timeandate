@@ -44,7 +44,8 @@ export function createForegroundCues({ speech, tone, tick }) {
       for (const candidate of [event, following]) {
         if (!candidate) continue;
         const slot = JSON.stringify([row.key, Boolean(candidate.phase)]);
-        const cue = { ...candidate, slot, key: row.key, runId: session.runId, phaseEnd: session.endAt ?? Infinity };
+        const cue = { ...candidate, slot, key: row.key, runId: session.runId,
+          soundMode: session.config.soundMode, phaseEnd: session.endAt ?? Infinity };
         const spoken = seen.get(slot);
         const held = pending.get(slot);
         if (spoken?.runId === cue.runId && spoken.id === cue.id) continue;

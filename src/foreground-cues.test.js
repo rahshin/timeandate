@@ -97,6 +97,47 @@ test("countdowns can tick before completion and independently choose the sound a
   }
 });
 
+test("timer-wide sound mode governs final seconds and completion", async () => {
+  for (const soundMode of ["tick", "speech", "off"]) {
+    const voice = fakeSpeech();
+    const sounds = [];
+    const cues = createForegroundCues({
+      speech: voice.speech, tone: () => sounds.push("chime"), tick: () => sounds.push("tick"),
+    });
+    const row = running("Tea", {
+      durationMs: 3000, finalSeconds: 1, soundMode, speakCompletion: true,
+    });
+    cues.update([row], 0);
+    cues.update([row], 2000);
+    await settle();
+    voice.end();
+    await settle();
+    cues.update([row], 3000);
+    await settle();
+    assert.deepEqual(sounds, soundMode === "tick" ? ["tick", "chime"] : []);
+    assert.deepEqual(voice.calls, soundMode === "speech" ? ["Tea, 1", "Tea complete"] : []);
+    voice.end();
+  }
+});
+
+test("switching an interval off silences preparation and cancels active speech", async () => {
+  const voice = fakeSpeech();
+  const sounds = [];
+  const cues = createForegroundCues({
+    speech: voice.speech, tone: () => sounds.push("chime"), tick: () => sounds.push("tick"),
+  });
+  const row = running("Intervals", {
+    kind: "interval", durationMs: 3000, repetitions: 2, preparation: true, soundMode: "speech",
+  });
+  cues.update([row], 0);
+  await settle();
+  const silent = { ...row, session: { ...row.session, config: { ...row.session.config, soundMode: "off" } } };
+  for (const now of [1000, 2000, 3000, 5000, 6000, 8000, 11_000]) cues.update([silent], now);
+  await settle();
+  assert.deepEqual(sounds, []);
+  assert.deepEqual(voice.calls, ["Intervals, starting in 3", "cancelled"]);
+});
+
 test("preparation identifies the timer and drops a missed number", async () => {
   const voice = fakeSpeech();
   const cues = createForegroundCues({ speech: voice.speech, tone() {} });

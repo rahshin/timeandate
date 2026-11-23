@@ -9,7 +9,7 @@ export function createTimerSession({
   durationMs, repetitions = 1, restMs = 2000, preparation = false,
   finalSecondsEnabled = false, finalSeconds = DEFAULT_FINAL_SECONDS, kind = "countdown",
   finalSecondsSound = "speech",
-  completionSound, speakCompletion = false, speakPhases = false, keepAwake = false,
+  soundMode, completionSound, speakCompletion = false, speakPhases = false, keepAwake = false,
 }) {
   if (!Number.isSafeInteger(durationMs) || durationMs <= 0 ||
       !Number.isSafeInteger(repetitions) || repetitions <= 0 ||
@@ -28,6 +28,10 @@ export function createTimerSession({
       finalSecondsEnabled, finalSeconds, finalSecondsSound,
     }
     : { kind: "countdown", durationMs, repetitions: 1, restMs: 0, preparationMs: 0 };
+  if (soundMode !== undefined) {
+    if (!["tick", "speech", "off"].includes(soundMode)) throw new RangeError("Choose a sound mode.");
+    Object.assign(config, { soundMode, finalSeconds });
+  }
   if (kind === "countdown") {
     if (completionSound !== undefined) {
       if (!["silent", "chime", "speech"].includes(completionSound)) throw new RangeError("Choose a completion sound.");

@@ -80,45 +80,34 @@ test("countdown border traces elapsed time and follows timer states", async ({ p
   await expect(trace).toHaveAttribute("stroke-dasharray", "0 1");
 });
 
-test("countdown sound choices are saved while runtime changes apply only to the current run", async ({ page }) => {
+test("countdown and interval tiles cycle saved sound modes before and during a run", async ({ page }) => {
   await page.goto("/dashboard");
-  await openEditor(page, "Countdown Timer");
-  await page.getByLabel("Name (optional)").fill("Sound preview");
-  const finalSeconds = page.getByRole("combobox", { name: "Final seconds", exact: true });
-  const cueWindow = page.locator('input[name="finalSeconds"]');
-  const completion = page.getByRole("combobox", { name: "When time’s up" });
-  await expect(finalSeconds).toHaveValue("off");
-  await expect(cueWindow).toBeHidden();
-  await expect(completion).toHaveValue("chime");
-  await finalSeconds.selectOption("tick");
-  await expect(cueWindow).toHaveValue("5");
-  await cueWindow.fill("7");
-  await completion.selectOption("speech");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  for (const type of ["Countdown Timer", "Interval Timer"]) {
+    await openEditor(page, type);
+    const mode = page.getByRole("combobox", { name: "Sound mode" });
+    const cueWindow = page.locator('input[name="finalSeconds"]');
+    await expect(mode).toHaveValue("off");
+    await expect(cueWindow).toBeHidden();
+    await mode.selectOption("tick");
+    await expect(cueWindow).toHaveValue("5");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
 
-  const timer = tile(page, "Sound preview");
-  const start = timer.getByRole("button", { name: "Start", exact: true });
-  const sound = timer.getByRole("button", { name: /^Sound for Sound preview/ });
-  const menu = timer.locator(".dashboard-sound-menu");
-  await start.click();
-  await sound.click();
-  await expect(menu.getByRole("radio", { name: "Ticks" })).toBeChecked();
-  await menu.getByRole("radio", { name: "Off" }).check();
-  await menu.getByRole("checkbox", { name: "Mute all sounds" }).check();
-  await expect(sound).toHaveAccessibleName("Sound for Sound preview, muted");
-  await page.keyboard.press("Escape");
-  await expect(menu).toBeHidden();
-  await timer.getByRole("button", { name: "Reset", exact: true }).click();
-  await expect(sound).toHaveAccessibleName("Sound for Sound preview");
-  await sound.click();
-  await expect(menu.getByRole("radio", { name: "Ticks" })).toBeChecked();
-  await expect(menu.getByRole("checkbox", { name: "Mute all sounds" })).not.toBeChecked();
-  await page.keyboard.press("Escape");
-  await timer.getByRole("button", { name: "Stop", exact: true }).click();
-  await timer.getByRole("link", { name: "Edit Sound preview" }).click();
-  await expect(finalSeconds).toHaveValue("tick");
-  await expect(cueWindow).toHaveValue("7");
-  await expect(completion).toHaveValue("speech");
+    const timer = tile(page, type);
+    const sound = timer.getByRole("button", { name: new RegExp(`^Sound for ${type}`) });
+    await expect(sound).toHaveAttribute("data-sound-mode", "tick");
+    await sound.click();
+    await expect(sound).toHaveAttribute("data-sound-mode", "speech");
+    await timer.getByRole("button", { name: "Start", exact: true }).click();
+    await expect(timer.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+    await sound.click();
+    await expect(sound).toHaveAttribute("data-sound-mode", "off");
+    await sound.click();
+    await expect(sound).toHaveAttribute("data-sound-mode", "tick");
+    await timer.getByRole("button", { name: "Stop", exact: true }).click();
+    await timer.getByRole("link", { name: `Edit ${type}` }).click();
+    await expect(mode).toHaveValue("tick");
+    await page.getByRole("link", { name: "Cancel", exact: true }).click();
+  }
 });
 
 test("world clock seconds persist and focus survives a dashboard update from another tab", async ({ page, context }) => {

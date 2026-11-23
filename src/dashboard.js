@@ -1,6 +1,6 @@
 import "./dashboard.css";
 import {
-  dashboardCountdown, dashboardSessionInterval, finalSecondsChoices, finalSecondsMode, finalSecondsSettings,
+  dashboardCountdown, dashboardSessionInterval, timerSoundChoices, timerSoundMode,
 } from "./dashboard-sessions.js";
 import { playTick, playTone, unlockTone } from "./timeandate/audio.js";
 import {
@@ -103,14 +103,10 @@ let localData;
 let activeId;
 const platform = foregroundPlatform();
 const wake = createWakeController(platform.requestWake);
-const runSound = new Map();
 const repository = openDashboardData((next, previous, commandKey) => {
   dashboards = next.dashboards;
   stored = new Map(Object.entries(next.cards));
   localData = next;
-  for (const [key, settings] of runSound) {
-    if (next.cards[key]?.value?.runId !== settings.runId) runSound.delete(key);
-  }
   if (previous) window.dispatchEvent(new CustomEvent("dashboarddata", { detail: { previous, commandKey } }));
 });
 
@@ -638,7 +634,7 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
 
   function addCard(key, record, path, definition = savedDefinition(record)) {
     const isClock = record.type === "clock";
-    const soundMenuId = !path && sessionDefinition(record.type) ? `sound-${crypto.randomUUID()}` : "";
+    const sessionSound = !path && definition === sessionDefinition(record.type);
     const hasSeconds = isClock || definition === dateCountdown;
     let formats;
     let formatsShowSeconds;
@@ -658,21 +654,17 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         ${isClock ? "" : `<button type="button" class="secondary dashboard-icon dashboard-mute">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M11 4 5 9H2v6h3l6 5z"/>
-            <path class="dashboard-speaker-waves" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>
-            <path class="dashboard-speaker-cross" d="m16 9 6 6m0-6-6 6"/>
+            <g class="dashboard-speaker">
+              <path d="M11 4 5 9H2v6h3l6 5z"/>
+              <path class="dashboard-speaker-waves" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>
+              <path class="dashboard-speaker-cross" d="m16 9 6 6m0-6-6 6"/>
+            </g>
+            <g class="dashboard-speaker-voice">
+              <path d="M10 21v-4h4v-3h3l-2-4V9a6 6 0 1 0-12 0c0 3 1 5 3 7v5m6-12h.01"/>
+              <path d="M18 8a4 4 0 0 1 0 6m2-8a7 7 0 0 1 0 10"/>
+            </g>
           </svg>
         </button>`}
-        ${soundMenuId ? `<div class="dashboard-sound-menu" id="${soundMenuId}" popover>
-          <fieldset><legend>Final seconds</legend>
-            ${Object.entries(finalSecondsChoices).map(([mode, name]) => `
-              <label class="dashboard-checkbox">
-                <input type="radio" name="${soundMenuId}" value="${mode}"> ${name}
-              </label>`).join("")}
-          </fieldset>
-          <label class="dashboard-checkbox"><input type="checkbox" name="muteRun"> Mute all sounds</label>
-          <p>Changes apply to this run.</p>
-        </div>` : ""}
         ${!path && definition.toggle ? `<a class="dashboard-icon dashboard-edit" data-route>${penIcon}</a>` : ""}
         ${!path ? '<button type="button" class="secondary dashboard-icon dashboard-remove">×</button>' : ""}
         </div>
@@ -696,28 +688,12 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     title.textContent = label;
     if (isClock) detail.textContent = zone;
     const mute = card.querySelector(".dashboard-mute");
-    const soundMenu = soundMenuId ? card.querySelector(".dashboard-sound-menu") : null;
-    const soundModes = soundMenu?.querySelectorAll('input[type="radio"]');
-    const muteRun = soundMenu?.querySelector('[name="muteRun"]');
-    if (soundMenu) {
-      soundMenu.onchange = event => {
-        const current = stored.get(key)?.value;
-        if (!current?.runId || !["running", "paused"].includes(advanceSession(current, Date.now()).status)) return;
-        const settings = { ...runSound.get(key), runId: current.runId };
-        if (event.target === muteRun) settings.muted = muteRun.checked;
-        else settings.mode = event.target.value;
-        runSound.set(key, settings);
-        unlockTone();
-        redraw();
-        updateForeground();
-      };
-    }
     const linkedMute = () => dashboards.mutedLinkedTimers?.[key] === true;
     if (mute) {
       mute.setAttribute("aria-label", `Mute alerts for ${label}`);
       mute.onclick = () => {
-        if (mute.hasAttribute("popovertarget")) return;
         const id = activeId;
+        if (sessionSound) unlockTone();
         void repository.change(data => {
           if (path) {
             const muted = data.dashboards.mutedLinkedTimers ??= {};
@@ -725,7 +701,17 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
           } else {
             const current = data.cards[key];
             if (!current || boardId(current) !== id) return false;
-            current.muted = current.muted !== true;
+            if (sessionSound) {
+              const session = definition.normalize(current.value, Date.now());
+              const boardSound = data.dashboards.boards.find(board => board.id === id)?.sound === true;
+              const mode = session.config.soundMode ?? (current.muted ? "off" : timerSoundMode(session.config, boardSound));
+              const modes = Object.keys(timerSoundChoices);
+              const soundMode = modes[(modes.indexOf(mode) + 1) % modes.length];
+              current.value = { ...session, config: { ...session.config, soundMode } };
+              delete current.muted;
+            } else {
+              current.muted = current.muted !== true;
+            }
           }
           return true;
         });
@@ -853,30 +839,23 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         return;
       }
       const view = definition.describe(current.value, now);
-      const settings = runSound.get(key);
-      const muted = path ? linkedMute() : (settings?.muted ?? current.muted === true);
+      const config = sessionSound ? definition.normalize(current.value, now).config : undefined;
+      const mode = config?.soundMode ?? (config && !current.muted ? timerSoundMode(config, sound.checked) : undefined);
+      const muted = path ? linkedMute() : mode ? mode === "off" : current.muted === true;
       const pressed = String(muted);
-      const menuAvailable = soundMenu && current.value.runId &&
-        (view.status.startsWith("Running") || view.status.startsWith("Paused"));
-      if (mute.dataset.muted !== pressed || mute.hasAttribute("popovertarget") !== Boolean(menuAvailable)) {
-        mute.dataset.muted = pressed;
-        if (menuAvailable) {
-          mute.setAttribute("popovertarget", soundMenuId);
-          mute.removeAttribute("aria-pressed");
-          mute.setAttribute("aria-label", `Sound for ${label}${muted ? ", muted" : ""}`);
-          mute.title = "Sound settings";
-        } else {
-          if (mute.hasAttribute("popovertarget")) soundMenu.hidePopover();
-          mute.removeAttribute("popovertarget");
-          mute.setAttribute("aria-pressed", pressed);
-          mute.setAttribute("aria-label", `Mute alerts for ${label}`);
-          mute.title = muted ? "Unmute timer alerts" : "Mute timer alerts";
+      if (sessionSound) {
+        const state = mode ?? "off";
+        if (mute.dataset.soundMode !== state) {
+          mute.dataset.soundMode = state;
+          const modes = Object.keys(timerSoundChoices);
+          const next = modes[(modes.indexOf(state) + 1) % modes.length];
+          mute.title = `Sound for ${label}: ${timerSoundChoices[state]}. Click for ${timerSoundChoices[next]}.`;
+          mute.setAttribute("aria-label", mute.title);
         }
-      }
-      if (menuAvailable) {
-        const mode = settings?.mode ?? finalSecondsMode(current.value.config);
-        for (const input of soundModes) input.checked = input.value === mode;
-        muteRun.checked = muted;
+      } else if (mute.dataset.muted !== pressed) {
+        mute.dataset.muted = pressed;
+        mute.setAttribute("aria-pressed", pressed);
+        mute.title = muted ? "Unmute timer alerts" : "Mute timer alerts";
       }
       const changed = previousStatus?.startsWith("Running") && previousStatus !== view.status &&
         (view.status.startsWith("Complete") || view.status.startsWith("Running"));
@@ -911,8 +890,8 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
       }
       if (announce && changed) return {
         text: `${label}. ${view.status}.`,
-        audible: !muted && current.value.config?.completionSound === undefined &&
-          (settings?.mode ? settings.mode === "off" : !current.value.config?.finalSecondsEnabled),
+        audible: !muted && config?.soundMode === undefined &&
+          current.value.config?.completionSound === undefined && !current.value.config?.finalSecondsEnabled,
       };
     });
     grid.append(card);
@@ -1125,14 +1104,11 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     for (const [key, record] of stored) {
       const definition = sessionDefinition(record.type);
       if (!definition || boardId(record) !== activeId || !record.value?.config) continue;
-      const settings = runSound.get(key);
-      const config = settings?.mode
-        ? { ...record.value.config, ...finalSecondsSettings(settings.mode), finalSeconds: record.value.config.finalSeconds ?? 5 }
-        : record.value.config;
+      const config = record.value.config;
       if (config.keepAwake && advanceSession(record.value, now).status === "running") awake = true;
       if (hasForegroundCues(config)) {
         rows.push({ key, label: record.name || definition.name,
-          muted: settings?.muted ?? record.muted === true, session: { ...record.value, config } });
+          muted: config.soundMode === undefined && record.muted === true, session: record.value });
       }
     }
     cues.update(rows, now);
@@ -1141,7 +1117,8 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
 
   function enableSound() {
     if (sound.checked || [...stored.values()].some(record => boardId(record) === activeId &&
-      (record.value?.config?.finalSecondsEnabled || record.value?.config?.completionSound === "chime"))) unlockTone();
+      (record.value?.config?.soundMode === "tick" || record.value?.config?.finalSecondsEnabled ||
+        record.value?.config?.completionSound === "chime"))) unlockTone();
     updateForeground(true);
   }
 
