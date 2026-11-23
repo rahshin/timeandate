@@ -12,16 +12,16 @@ export function unlockTone() {
 }
 
 export function playTone() {
-  playSound(523.25, 0.36, 0.03);
+  return playSound(523.25, 0.36, 0.03);
 }
 
 export function playTick() {
-  playSound(880, 0.07, 0.005);
+  return playSound(880, 0.07, 0.005);
 }
 
 function playSound(frequency, duration, attack) {
   try {
-    if (context?.state !== "running") return;
+    if (context?.state !== "running") return false;
     const oscillator = context.createOscillator();
     const volume = context.createGain();
     const start = context.currentTime;
@@ -37,7 +37,8 @@ function playSound(frequency, duration, attack) {
     }, { once: true });
     oscillator.start(start);
     oscillator.stop(start + duration);
+    return true;
   } catch {
-    // Audio failures do not affect the countdown.
+    return false;
   }
 }
