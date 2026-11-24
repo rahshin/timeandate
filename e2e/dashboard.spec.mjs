@@ -131,6 +131,7 @@ test("countdown border traces elapsed time and follows timer states", async ({ p
   await expect(status).toHaveText("Running");
   await at(25);
   await expect(trace).toHaveAttribute("stroke-dasharray", "0.5 1");
+  await expect(timer.locator(".timer-unit-changed")).toHaveText("25");
   await expect(trace).toHaveCSS("stroke", "rgb(56, 189, 248)");
   await timer.getByRole("button", { name: "Pause", exact: true }).click();
   await expect(status).toHaveText("Paused");
@@ -211,6 +212,42 @@ test("world clock seconds persist and focus survives a dashboard update from ano
   await expect(clock.locator("time")).toHaveText(/^\d\d:\d\d$/);
 });
 
+test("world clock hands follow the readout and the smallest unit changes color", async ({ page }) => {
+  await page.clock.install({ time: new Date("2027-01-01T12:34:00Z") });
+  await page.goto("/dashboard");
+  await addClock(page, "UTC Clock");
+  const clock = tile(page, "UTC Clock");
+  const hour = clock.locator('[data-hand="hour"]');
+  const minute = clock.locator('[data-hand="minute"]');
+  const second = clock.locator('[data-hand="second"]');
+  const unit = clock.locator(".timer-readout-unit").last();
+  const highlight = "rgb(251, 191, 36)";
+
+  await expect(clock.locator("time")).toHaveText("12:34");
+  await expect(clock.locator(".dashboard-clock-face")).toBeVisible();
+  await expect(hour).toHaveAttribute("transform", "rotate(377 32 32)");
+  await expect(minute).toHaveAttribute("transform", "rotate(204 32 32)");
+  await expect(second).toBeHidden();
+  await page.clock.pauseAt(new Date("2027-01-01T12:34:59Z"));
+  await page.clock.fastForward(1_000);
+  await expect(unit).toHaveText("35");
+  await expect(unit).toHaveCSS("color", highlight);
+  await page.clock.runFor(999);
+  await expect(unit).toHaveCSS("color", highlight);
+  await page.clock.runFor(1);
+  await expect(unit).not.toHaveCSS("color", highlight);
+  await page.clock.setSystemTime(new Date("2027-01-01T12:35:00Z"));
+
+  await clock.getByRole("checkbox", { name: "Seconds" }).check();
+  await expect(second).not.toHaveCSS("display", "none");
+  await expect(second).toHaveAttribute("transform", "rotate(0 32 32)");
+  await page.clock.fastForward(1_000);
+  await expect(clock.locator("time")).toHaveText("12:35:01");
+  await expect(second).toHaveAttribute("transform", "rotate(6 32 32)");
+  await expect(unit).toHaveText("01");
+  await expect(unit).toHaveCSS("color", highlight);
+});
+
 test("date countdown makes seconds automatic as the deadline approaches", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2027-01-01T12:00:00Z"));
   await page.goto("/dashboard");
@@ -225,6 +262,7 @@ test("date countdown makes seconds automatic as the deadline approaches", async 
   await countdown.getByRole("button", { name: "Start", exact: true }).click();
   await page.clock.setFixedTime(new Date("2027-01-01T13:59:24Z"));
   await expect(countdown.getByRole("timer")).toHaveText("36s");
+  await expect(countdown.locator(".timer-unit-changed")).toHaveText("36s");
   await expect(seconds).toBeHidden();
 });
 
@@ -254,7 +292,9 @@ test("an interval completes its repetitions and records the run in History", asy
   const interval = tile(page, "Practice");
   await interval.getByRole("button", { name: "Start", exact: true }).click();
   await expect(interval.getByText(/Running.*Repetition 1 of 2/)).toBeVisible();
-  await page.clock.fastForward(3_000);
+  await page.clock.fastForward(1_000);
+  await expect(interval.locator(".timer-unit-changed")).toHaveText("01");
+  await page.clock.fastForward(2_000);
   await expect(interval.getByText(/Running.*Rest after repetition 1 of 2/)).toBeVisible();
   await page.clock.fastForward(4_000);
   await expect(interval.getByText("Complete", { exact: true })).toBeVisible();
@@ -331,4 +371,29 @@ test("long date countdowns fit on one line and grow when the tile gets wider", a
   await timer.evaluate(element => { element.closest(".dashboard-card").style.removeProperty("width"); });
   await expect.poll(async () => (await dimensions()).fontSize).toBeGreaterThan(narrow);
   await expect.poll(async () => (await dimensions()).fits).toBe(true);
+});
+
+test("standalone countdowns highlight the smallest changing unit", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2027-01-01T12:00:00Z"));
+  await page.goto("/countdown");
+  await page.getByLabel("Timezone").selectOption("UTC");
+  await page.getByLabel("Target date and time").fill("2027-01-01T14:00");
+  await page.getByRole("button", { name: "Start countdown" }).click();
+  await page.getByRole("button", { name: "Start timer" }).click();
+
+  await page.clock.setFixedTime(new Date("2027-01-01T12:01:01Z"));
+  const minute = page.locator('#date-panel [data-unit="minutes"]');
+  const seconds = page.locator("#duration-panel .timer-unit-changed");
+  await expect(minute).toHaveText("59");
+  await expect(minute).toHaveCSS("color", "rgb(251, 191, 36)");
+  await expect(seconds).toHaveText("59");
+});
+
+test("standalone interval readout highlights seconds on a minute rollover", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2027-01-01T12:00:00Z"));
+  await page.goto("/interval-timer-app/");
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await page.clock.setFixedTime(new Date("2027-01-01T12:00:01Z"));
+  await expect(page.getByRole("timer")).toHaveText("09:59");
+  await expect(page.locator(".timer-unit-changed")).toHaveText("59");
 });

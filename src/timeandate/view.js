@@ -1,4 +1,5 @@
 import "./style.css";
+import { createDigitalReadout } from "../timer-readout.js";
 import "./settings.css";
 import { formatRemaining, initialTimer, pauseTimer, reconcile, remainingTime, startTimer } from "./timer.js";
 import { initIntervalFields, intervalFields, phaseLength, readIntervalFields } from "./settings.js";
@@ -41,7 +42,7 @@ export function mountMultiTimer(root, { standalone = false, now = Date.now } = {
   const panel = get("panel");
   const phase = get("phase");
   const cycle = get("cycle");
-  const clock = get("clock");
+  const paintReadout = createDigitalReadout(get("clock"));
   const progress = get("progress");
   const next = get("next");
   const primary = get("primary");
@@ -66,7 +67,7 @@ export function mountMultiTimer(root, { standalone = false, now = Date.now } = {
     panel.dataset.phase = timer.phase;
     setText(phase, complete ? "Complete" : phaseName[timer.phase]);
     setText(cycle, activities ? `${timer.cycle} of ${activities} activities` : `Activity ${timer.cycle}`);
-    setText(clock, display);
+    paintReadout(display);
     progress.value = Math.max(0, 1 - remaining / phases[timer.phase]);
     if (complete) setText(next, "All activities finished.");
     else if (timer.phase === "activity" && timer.cycle === activities) setText(next, "Final activity.");
