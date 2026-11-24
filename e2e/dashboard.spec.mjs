@@ -9,10 +9,16 @@ async function openEditor(page, type) {
   await page.getByRole("main").getByRole("link", { name: new RegExp(`^${type}\\b`) }).click();
 }
 
+async function pickTimezone(page, option, query) {
+  await page.getByRole("button", { name: /^Timezone / }).click();
+  if (query) await page.getByRole("combobox", { name: "Search city or timezone" }).fill(query);
+  await page.getByRole("option", { name: option }).click();
+}
+
 async function addClock(page, name) {
   await openEditor(page, "World Clock");
   await page.getByLabel("Name (optional)").fill(name);
-  await page.getByLabel("Timezone").selectOption("UTC");
+  await pickTimezone(page, "UTC");
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(tile(page, name)).toBeVisible();
 }
@@ -70,23 +76,31 @@ test.describe("holiday countdowns", () => {
   test("first-run seasonal countdown persists its removal and shares presets with the editor", async ({ page }) => {
     await page.clock.setFixedTime(new Date("2026-12-26T12:00:00Z"));
     await page.goto("/dashboard");
-    const newYear = tile(page, "New Year’s Eve");
+    const newYear = tile(page, "New Year’s Day");
     await expect(page.locator(".dashboard-card")).toHaveCount(4);
     await expect(newYear).toContainText("2027-01-01 00:00");
     page.once("dialog", dialog => dialog.accept());
-    await newYear.getByRole("button", { name: "Remove New Year’s Eve" }).click();
+    await newYear.getByRole("button", { name: "Remove New Year’s Day" }).click();
     await expect(newYear).toHaveCount(0);
     await page.reload();
     await expect(page.locator(".dashboard-card")).toHaveCount(3);
 
     await openEditor(page, "Date Countdown");
-    await page.getByText("Holiday presets", { exact: true }).click();
+    await page.getByText("Date presets", { exact: true }).click();
     await page.getByRole("combobox", { name: "Country", exact: true }).selectOption("IN");
-    await page.getByRole("combobox", { name: "Holiday", exact: true }).selectOption("holi-goa");
-    await expect(page.getByLabel("Target date and time")).toHaveValue("2027-03-22T00:00");
-    await expect(page.getByLabel("Timezone")).toHaveValue("America/Los_Angeles");
+    await page.getByRole("combobox", { name: "Preset", exact: true }).selectOption("holi");
+    await expect(page.getByLabel("Target date and time")).toHaveValue("2027-03-23T00:00");
+    const timezone = page.getByRole("button", { name: /^Timezone / });
+    await expect(timezone).toHaveText("Your Timezone · Los Angeles");
+    await pickTimezone(page, /^Mumbai · India/, "Mumbai");
+    await expect(page.getByLabel("Target date and time")).toHaveValue("2027-03-23T00:00");
+    await expect(page.getByRole("combobox", { name: "Preset", exact: true })).toHaveValue("holi");
+    await expect(timezone).toHaveText("Mumbai · India");
     await page.getByRole("button", { name: "Add", exact: true }).click();
-    await expect(tile(page, "Holi (Dhulivandana, Goa)")).toBeVisible();
+    const holiday = tile(page, "Holi (central government calendar)");
+    await expect(holiday).toContainText("Asia/Kolkata");
+    await holiday.getByRole("link", { name: /Edit/ }).click();
+    await expect(page.getByRole("button", { name: /^Timezone / })).toHaveText("Kolkata · Asia");
   });
 });
 
@@ -252,7 +266,7 @@ test("date countdown makes seconds automatic as the deadline approaches", async 
   await page.clock.setFixedTime(new Date("2027-01-01T12:00:00Z"));
   await page.goto("/dashboard");
   await openEditor(page, "Date Countdown");
-  await page.getByLabel("Timezone").selectOption("UTC");
+  await pickTimezone(page, "UTC");
   await page.getByLabel("Target date and time").fill("2027-01-01T14:00");
   await page.getByRole("button", { name: "Add", exact: true }).click();
 
@@ -270,9 +284,10 @@ test("Now follows the selected timezone and saves as a future target", async ({ 
   await page.clock.setFixedTime(new Date("2027-01-01T12:00:45Z"));
   await page.goto("/dashboard");
   await openEditor(page, "Date Countdown");
-  await page.getByLabel("Timezone").selectOption("UTC");
   const target = page.getByLabel("Target date and time");
-  await expect(target).toHaveValue("2027-01-01T12:01");
+  const initialTarget = await target.inputValue();
+  await pickTimezone(page, "UTC");
+  await expect(target).toHaveValue(initialTarget);
   await page.getByRole("button", { name: "Now", exact: true }).click();
   await expect(target).toHaveValue("2027-01-01T12:00");
   await page.getByRole("button", { name: "Add", exact: true }).click();
@@ -354,7 +369,7 @@ test("long date countdowns fit on one line and grow when the tile gets wider", a
   await page.clock.setFixedTime(new Date("2027-01-01T12:00:00Z"));
   await page.goto("/dashboard");
   await openEditor(page, "Date Countdown");
-  await page.getByLabel("Timezone").selectOption("UTC");
+  await pickTimezone(page, "UTC");
   await page.getByLabel("Target date and time").fill("9876-11-29T21:59");
   await page.getByRole("button", { name: "Add", exact: true }).click();
   const timer = tile(page, "Date Countdown").getByRole("timer");
@@ -373,10 +388,26 @@ test("long date countdowns fit on one line and grow when the tile gets wider", a
   await expect.poll(async () => (await dimensions()).fits).toBe(true);
 });
 
+test("date presets include timed events in the selected timezone", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-23T12:00:00Z"));
+  await page.goto("/dashboard");
+  await openEditor(page, "Date Countdown");
+  await page.getByText("Date presets", { exact: true }).click();
+  await page.getByRole("combobox", { name: "Country", exact: true }).selectOption("US");
+  await pickTimezone(page, /^New York · America/, "America/New_York");
+  const presets = page.getByRole("combobox", { name: "Preset", exact: true });
+  await expect(presets.getByRole("option", { name: /^Christmas/ })).toHaveCount(1);
+  await presets.selectOption("us-general-election");
+  await expect(page.getByLabel("Target date and time")).toHaveValue("2028-11-07T20:00");
+  await expect(page.getByRole("button", { name: /^Timezone / })).toHaveText("New York · America");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(tile(page, "U.S. General Election Day")).toContainText("2028-11-07 20:00 · America/New York");
+});
+
 test("standalone countdowns highlight the smallest changing unit", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2027-01-01T12:00:00Z"));
   await page.goto("/countdown");
-  await page.getByLabel("Timezone").selectOption("UTC");
+  await pickTimezone(page, "UTC");
   await page.getByLabel("Target date and time").fill("2027-01-01T14:00");
   await page.getByRole("button", { name: "Start countdown" }).click();
   await page.getByRole("button", { name: "Start timer" }).click();

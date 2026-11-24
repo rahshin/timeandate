@@ -1,4 +1,4 @@
-import { seasonalHoliday } from "./dashboard-holidays.js";
+import { seasonalHoliday } from "./dashboard-date-presets.js";
 import { createTimerSession } from "./timer-session.js";
 
 // Add a factory under a canonical locale tag (en-IN), region (IN), or language (hi).

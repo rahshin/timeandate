@@ -65,16 +65,6 @@ export function dateCountdownShortcut(shortcut, wallTime, zone, now = Temporal.N
   }
 }
 
-export function fillTimeZones(select) {
-  const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const zones = new Set([localZone, "UTC", ...Intl.supportedValuesOf("timeZone")]);
-  for (const zone of [...zones].sort()) {
-    select.add(new Option(zone.replaceAll("_", " "), zone));
-  }
-  select.value = localZone;
-  return localZone;
-}
-
 export function clockFormatters(timeZone, showSeconds = false) {
   return {
     time: new Intl.DateTimeFormat("en-GB", {

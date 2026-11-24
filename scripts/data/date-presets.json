@@ -1,0 +1,45 @@
+{
+  "include": {
+    "common": ["christmas", "new-year"],
+    "US": ["thanksgiving"],
+    "CA": ["canada-day", "canada-thanksgiving"],
+    "IN": ["holi", "holi-goa", "dussehra", "diwali"]
+  },
+  "holidays": {
+    "christmas": { "name": "Christmas", "month": 12, "day": 25 },
+    "new-year": { "name": "New Year’s Day", "month": 1, "day": 1 },
+    "thanksgiving": {
+      "name": "Thanksgiving", "month": 11, "weekday": 4, "occurrence": 4,
+      "source": "https://www.opm.gov/frequently-asked-questions/pay-and-leave-faq/pay-administration/what-are-federal-holidays"
+    },
+    "canada-day": {
+      "name": "Canada Day", "month": 7, "day": 1,
+      "source": "https://www.canada.ca/en/library-archives/services/public/visit/holiday-closures.html"
+    },
+    "canada-thanksgiving": {
+      "name": "Thanksgiving", "month": 10, "weekday": 1, "occurrence": 2,
+      "source": "https://www.canada.ca/en/library-archives/services/public/visit/holiday-closures.html"
+    },
+    "holi": { "name": "Holi (central government calendar)", "dates": ["2026-03-04", "2027-03-23"] },
+    "holi-goa": { "name": "Holi (Dhulivandana, Goa)", "dates": ["2027-03-22"], "presetOnly": true, "source": "https://www.goa.gov.in/wp-content/uploads/2026/11/List-of-Holidays-for-the-year-2027.pdf" },
+    "dussehra": { "name": "Dussehra (Vijaya Dashami)", "dates": ["2026-10-20", "2027-10-09"] },
+    "diwali": { "name": "Diwali (Deepavali)", "dates": ["2026-11-08", "2027-10-29"] }
+  },
+  "events": {
+    "US": [
+      {
+        "id": "us-general-election",
+        "name": "U.S. General Election Day",
+        "dates": ["2026-11-03", "2028-11-07"],
+        "localTime": "20:00",
+        "source": "https://uscode.house.gov/us/usc/t2/s7/"
+      }
+    ]
+  },
+  "sources": {
+    "IN": {
+      "2026": "https://cgca.gov.in/ccadl/list-of-holiday",
+      "2027": "https://www.iirs.gov.in/holidaycalender/"
+    }
+  }
+}

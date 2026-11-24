@@ -1,0 +1,131 @@
+name: Refresh date and timezone catalogs
+
+on:
+  workflow_dispatch:
+    inputs:
+      refresh_cities:
+        description: Download GeoNames and regenerate the city catalog
+        type: boolean
+        default: true
+      refresh_dates:
+        description: Regenerate date presets from the reviewed source
+        type: boolean
+        default: true
+      target_branch:
+        description: Blank uses the default branch. For maintenance, enter release/<major>.<minor>.
+        type: string
+  workflow_call:
+    inputs:
+      refresh_cities:
+        description: Download GeoNames and regenerate the city catalog
+        type: boolean
+        default: true
+      refresh_dates:
+        description: Regenerate date presets from the reviewed source
+        type: boolean
+        default: true
+      target_branch:
+        description: Blank uses the default branch. For maintenance, enter release/<major>.<minor>.
+        type: string
+    outputs:
+      changed:
+        description: Whether a catalog update PR was created
+        value: ${{ jobs.refresh.outputs.changed }}
+      pull_request:
+        description: URL of the catalog update PR when one was created
+        value: ${{ jobs.refresh.outputs.pull_request }}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: refresh-date-and-timezone-catalogs
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    outputs:
+      changed: ${{ steps.catalogs.outputs.changed }}
+      pull_request: ${{ steps.publish.outputs.pull_request }}
+    steps:
+      - name: Select target branch
+        id: target
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          branch=${TARGET_BRANCH:-$DEFAULT_BRANCH}
+          if [[ "$branch" == "$DEFAULT_BRANCH" ]]; then
+            ref=$GITHUB_SHA
+          elif [[ "$branch" =~ ^release/[0-9]+\.[0-9]+$ ]]; then
+            ref="refs/heads/$branch"
+          else
+            echo "Select the default branch or an existing release/<major>.<minor> branch." >&2
+            exit 1
+          fi
+          printf 'branch=%s\nref=%s\n' "$branch" "$ref" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.target.outputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Regenerate catalogs
+        id: catalogs
+        env:
+          REFRESH_CITIES: ${{ inputs.refresh_cities }}
+          REFRESH_DATES: ${{ inputs.refresh_dates }}
+        run: |
+          if [[ "$REFRESH_CITIES" == true ]]; then
+            snapshot=$(mktemp -d)
+            for asset in cities15000.zip countryInfo.txt admin1CodesASCII.txt; do
+              curl --fail --silent --show-error --location --retry 3 --max-time 120 \
+                "https://download.geonames.org/export/dump/$asset" --output "$snapshot/$asset"
+            done
+            python3 scripts/build-timezone-catalog.py "$snapshot" "$(date -u +%F)"
+            if git diff --quiet -- src/timezone-catalog/cities.json; then
+              git restore -- src/timezone-catalog/snapshot.json
+            fi
+          fi
+          if [[ "$REFRESH_DATES" == true ]]; then
+            node scripts/build-date-presets.mjs
+          fi
+
+          if git diff --quiet -- src/date-presets.json src/timezone-catalog/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No generated catalog changes." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Verify catalog changes
+        if: steps.catalogs.outputs.changed == 'true'
+        run: |
+          npm test
+          npm run build
+          npm run mobile:build
+      - name: Open pull request for review
+        id: publish
+        if: steps.catalogs.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_BRANCH: ${{ steps.target.outputs.branch }}
+        run: |
+          branch="automation/catalog-refresh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src/date-presets.json src/timezone-catalog/cities.json src/timezone-catalog/snapshot.json
+          git commit -m "Refresh date and timezone catalogs"
+          gh auth setup-git
+          git push --set-upstream origin "$branch"
+          pr=$(gh pr create --base "$BASE_BRANCH" --head "$branch" --reviewer "$GITHUB_ACTOR" \
+            --title "Refresh date and timezone catalogs" \
+            --body "Regenerated the selected bundled catalogs for this branch. Unit tests and web and mobile builds passed. Please review the catalog diff before merging.")
+          printf 'pull_request=%s\n' "$pr" >> "$GITHUB_OUTPUT"
+          printf 'Pull request awaiting review: %s\n' "$pr" >> "$GITHUB_STEP_SUMMARY"

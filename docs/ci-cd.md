@@ -55,6 +55,8 @@ Suppose QA is testing `v0.2.0-rc.1`. New work has already landed on `main`, and 
 
 ## Run a release
 
+For a candidate from `main`, the **Refresh catalogs** checkbox checks for updates before release planning. A catalog change opens a review PR and ends that candidate attempt. Merge the PR and wait for push CI before dispatching a new candidate. For a maintenance branch, run the separate catalog refresh against that branch. See the [README catalog refresh guide](../README.md#update-bundled-date-presets-and-timezones).
+
 1. Merge a feature into `main` or a patch into the corresponding `release/<major>.<minor>` maintenance branch. Wait for the CI **push** run for that commit to succeed.
 2. From **Actions → Release → Run workflow**, select workflow ref `main` and operation `candidate`. Leave `source_sha` blank to build the commit at `main` when you start the run. For a maintenance release or an RC that must exclude newer work on `main`, use the full SHA from the tested `release/<major>.<minor>` branch and enter an explicit tag.
 3. With `tag` blank, the workflow continues the highest unshipped RC line in the selected commit's history that is at least the declared package version and newer than the latest stable tag. Otherwise it uses the package version if ahead of stable, or starts the next minor line after stable. Select **major_release** with a blank tag to start or continue the next major line after the latest stable release. For example, with stable `v0.6.0` and an existing `v1.0.0-rc.1`, the major option selects `v1.0.0-rc.2`. Open the workflow run's **Summary** to see the requested inputs, resolved tag, and exact source commit.
