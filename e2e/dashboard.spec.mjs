@@ -91,7 +91,7 @@ test.describe("holiday countdowns", () => {
     await page.getByRole("combobox", { name: "Preset", exact: true }).selectOption("holi");
     await expect(page.getByLabel("Target date and time")).toHaveValue("2027-03-23T00:00");
     const timezone = page.getByRole("button", { name: /^Timezone / });
-    await expect(timezone).toHaveText("Device timezone · Los Angeles");
+    await expect(timezone).toHaveText("Your Timezone · Los Angeles");
     await pickTimezone(page, /^Mumbai · India/, "Mumbai");
     await expect(page.getByLabel("Target date and time")).toHaveValue("2027-03-23T00:00");
     await expect(page.getByRole("combobox", { name: "Preset", exact: true })).toHaveValue("holi");

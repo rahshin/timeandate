@@ -9,7 +9,7 @@ test("standalone countdown searches, dismisses, restores, and resets its timezon
   const search = page.getByRole("combobox", { name: "Search city or timezone" });
   const target = page.getByLabel("Target date and time");
 
-  await expect(trigger).toHaveText("Device timezone · Los Angeles");
+  await expect(trigger).toHaveText("Your Timezone · Los Angeles");
   await target.fill("2038-01-01T00:00");
   await trigger.click();
   await expect(search).toBeFocused();
@@ -22,7 +22,7 @@ test("standalone countdown searches, dismisses, restores, and resets its timezon
   await expect(page.getByRole("option", { name: /Portland · Maine/ })).toBeVisible();
   await search.press("Escape");
   await expect(trigger).toBeFocused();
-  await expect(trigger).toHaveText("Device timezone · Los Angeles");
+  await expect(trigger).toHaveText("Your Timezone · Los Angeles");
 
   await trigger.click();
   await search.fill("no-such-location");
@@ -46,6 +46,6 @@ test("standalone countdown searches, dismisses, restores, and resets its timezon
   await expect(trigger).toHaveText("Kolkata · Asia");
   await expect(target).toHaveValue("2038-01-01T00:00");
   await page.getByRole("button", { name: "Clear", exact: true }).click();
-  await expect(trigger).toHaveText("Device timezone · Los Angeles");
+  await expect(trigger).toHaveText("Your Timezone · Los Angeles");
   await expect(target).toHaveValue("");
 });

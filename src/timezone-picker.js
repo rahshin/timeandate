@@ -16,7 +16,7 @@ export const timezoneField = `
     </div>
   </div>`;
 
-const device = zoneRow(deviceZone, `Device timezone · ${zoneLabel(deviceZone).split(" · ")[0]}`);
+const device = zoneRow(deviceZone, `Your Timezone · ${zoneLabel(deviceZone).split(" · ")[0]}`);
 const pinned = resolvedZone(deviceZone) === resolvedZone("UTC") ? [device] : [device, zoneRow("UTC")];
 const compareZones = (a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label);
 const runtimeRows = Intl.supportedValuesOf("timeZone").map(zone => zoneRow(zone))
