@@ -5,6 +5,7 @@ const mode = process.env.TIMEANDATE_TEST_MODE === "native" ? "native" : "product
 
 export default defineConfig({
   testDir: "./e2e",
+  grepInvert: mode === "native" ? /@web-only\b/ : undefined,
   use: { baseURL: origin, browserName: "chromium" },
   webServer: {
     command: `npm run preview -- --mode ${mode} --host 127.0.0.1 --port 4173 --strictPort`,

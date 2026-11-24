@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo 'Usage: scripts/pr-agent {review|draft} {codex|claude|hermes} [instructions]'
+}
+
+if [[ ${1:-} == --help || ${1:-} == -h ]]; then
+  usage
+  exit 0
+fi
+if (( $# < 2 || $# > 3 )); then
+  usage >&2
+  exit 2
+fi
+
+case "$1" in
+  review) skill=pr-test-review ;;
+  draft) skill=pr-creator ;;
+  *) usage >&2; exit 2 ;;
+esac
+case "$2" in
+  codex|claude|hermes) harness=$2 ;;
+  *) usage >&2; exit 2 ;;
+esac
+if ! command -v "$harness" >/dev/null; then
+  printf '%s is not on PATH.\n' "$harness" >&2
+  exit 127
+fi
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+printf -v prompt 'Read skills/%s/SKILL.md and follow it.\n\n%s' "$skill" "${3:-}"
+
+case "$harness" in
+  codex) exec codex exec --sandbox read-only "$prompt" ;;
+  claude) exec claude -p "$prompt" ;;
+  hermes) exec hermes chat --oneshot -q "$prompt" ;;
+esac

@@ -2,8 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test.use({ timezoneId: "America/Los_Angeles", viewport: { width: 390, height: 844 } });
 
-test("standalone countdown searches, dismisses, restores, and resets its timezone", async ({ page }) => {
-  test.skip(process.env.TIMEANDATE_TEST_MODE === "native", "Standalone web countdown");
+test("standalone countdown searches, dismisses, restores, and resets its timezone", { tag: "@web-only" }, async ({ page }) => {
   await page.goto("/countdown");
   const trigger = page.getByRole("button", { name: /^Timezone / });
   const search = page.getByRole("combobox", { name: "Search city or timezone" });
