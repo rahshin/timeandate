@@ -3,7 +3,7 @@
 Time And Date includes time and date related utilities. The GitHub Actions web release pipeline promotes a verified build from QA to production.
 
 - **World Clocks** compares the date and local time in selected cities. Sort by city name (**A–Z** or **Z–A**) or by the current UTC offset (**lowest first** or **highest first**). The shared link preserves the order. Try `/clocks?cities=seattle,london,tokyo`.
-- **Dashboard** is the landing page and is also available at `/dashboard`. Use **+** in the tab bar to create a named dashboard and **×** to remove one. Select **Set as default** to choose which dashboard opens first. Use **+** beside the dashboard name to add a timer or a clock for any listed timezone. Each clock can show seconds. New dashboard timers open ready to start. Use **Pause** to hold a timer and **Edit** to change its configuration while stopped or paused. Saving edits returns it to **Ready**. Countdown Timer **Reset** restores the full duration and restarts it if it was running. Date countdowns keep their selected deadline and catch up when resumed. Dashboards and their items are saved on this device. Timers on other dashboards keep running silently. The visible dashboard announces timer changes and can also play a tone when **Timer sound** is enabled. Use a timer’s speaker button to silence its dashboard announcements and tones. The web and Capacitor dashboards offer Date Countdown, Countdown Timer, Interval Timer, and World Clock.
+- **Dashboard** is the landing page and is also available at `/dashboard`. Use **+** in the tab bar to create a named dashboard and **×** to remove one. Select **Set as default** to choose which dashboard opens first. Use **+** beside the dashboard name to add a timer or a clock for any listed timezone. Each clock can show seconds. New dashboard timers open ready to start. Use **Pause** to hold a timer and **Edit** to change its configuration while stopped or paused. Saving edits returns it to **Ready**. Countdown Timer **Reset** restores the full duration and restarts it if it was running. Date countdowns keep their selected deadline and catch up when resumed. Dashboards and their items are saved on this device. Timers on other dashboards keep running silently. Use the timer speaker button to cycle **Ticks**, **Voice**, and **Off** for Countdown and Interval Timers. Dashboard mute overrides playback while preserving each timer’s choice. The web and Capacitor dashboards offer Date Countdown, Countdown Timer, Interval Timer, and World Clock.
 - **Date Countdown** targets a date, time, and timezone. **Countdown Timer** counts down a duration in hours, minutes, and seconds. Standalone countdown screens are also available on the web.
 - **Interval Timer** repeats a timed activity with optional rest between repetitions. The standalone web PWA is available at `/interval-timer-app/`. Old `/interval-timer-v0` bookmarks open the PWA.
 
@@ -27,7 +27,7 @@ npm run build
 npm run test:e2e
 ```
 
-To test the web bundle used by Android and iOS, run `npm run mobile:build` followed by `TIMEANDATE_TEST_MODE=native npm run test:e2e`.
+To test the web bundle used by Android and iOS, run `npm run mobile:build` and follow the native browser test command in the [test plan](docs/test-plan.md).
 
 ## Build and run mobile apps
 
@@ -41,8 +41,14 @@ Open `/interval-timer-app/` over HTTPS and use your browser’s install or Add t
 
 Keep the app open for reliable alerts. Sound may not play while your device is locked or the app is in the background. When you return, the timer catches up from its saved deadline.
 
+## Project documentation
+
+- [Architecture](docs/architecture.md) covers build targets, timer lifecycle, local data, and recovery.
+- [Test plan](docs/test-plan.md) covers automated checks and release verification.
+- [Architecture article](docs/architecture-evolution.md) explains how the design evolved from standalone tools to multi-board timer sessions.
+
 ## Release pipeline
 
 The [CI/CD guide](docs/ci-cd.md) shows the feature and patch flows, including review, artifact verification, and rollback. See [deployment setup](docs/setup.md) for GitHub and Cloudflare configuration.
 
-The web app and standalone PWA run in Cloudflare Workers Static Assets. The existing Capacitor apps use a separate build target. The [Substack draft](docs/multi-timer-cicd-substack.md) and [portfolio case study](docs/multi-timer-cicd-portfolio.md) use Multi Timer to walk through both targets and the release pipeline.
+The web app and standalone PWA run in Cloudflare Workers Static Assets. The existing Capacitor apps use a separate build target. The [Substack draft](docs/multi-timer-cicd-substack.md) and [portfolio case study](docs/multi-timer-cicd-portfolio.md) are historical accounts of the original Multi Timer release.
