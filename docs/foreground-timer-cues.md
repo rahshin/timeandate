@@ -2,29 +2,19 @@
 
 Foreground cues help people follow a timer while looking away from the screen. Dashboard Countdown Timers and Interval Timers use wall-clock deadlines for timing, on-screen status, and History. Speech, tones, and screen wake are optional and run independently of those deadlines.
 
-## Adversarial review
+## Sound modes and cue inventory
 
-| Reviewer | Finding | Resolution |
+The timer speaker control cycles **Ticks**, **Voice**, and **Off**. The choice is saved with the session configuration. Board mute overrides delivery and leaves that choice intact. **Keep screen awake** is independent. Older sessions without an explicit mode retain their saved cue settings until a mode is selected.
+
+| Event | Voice | Ticks |
 | --- | --- | --- |
-| Software Architect | The controller inferred events from status and counter deltas, duplicated countdown scheduling rules, and mixed event wording with queue state. A delayed sample could announce the wrong repetition. | Observe exact natural boundaries from the timer engine. Keep cue eligibility, wording, priority, and expiry in one policy module. Give the queue responsibility for playback and arbitration. |
-| Principal Frontend Developer | A late rest instruction can tell someone to stop after the next repetition has started. Bare digits are ambiguous after a timer switch. The Dashboard could sample the previous board during a board change, and the final-seconds chime relied on two audio paths. | Bind instructions to a live phase and deadline. Name the timer at the start of a number sequence and when playback switches timers. Resolve the active board before sampling and give the final-seconds chime one owner. |
-| Product Manager | The gap is actionable guidance at rest and work boundaries. Putting those cues under an existing option would change the meaning of saved preferences. Routine button confirmations would add chatter. | Add one default-off **Speak rest and repetition starts** option to Interval Timers and presets. Preserve separate preparation, final-seconds, and completion choices. Prioritize completion and give live phase prompts a chance to follow. |
+| Interval preparation, when enabled | Speaks the remaining numbers, beginning with the timer name. | Short tones. |
+| Entry into running rest or activity | Names the timer and announces rest or the repetition start. Zero-length rest has no rest prompt. | Short transition tone. |
+| Closing seconds of activity | Speaks current numbers. Names the timer at the start of the window and when switching timers. A five-second repetition with a longer window starts at four. | Short tones. |
+| Natural end of an activity | Announces a repetition completion or a final session completion. A live rest or next-start prompt can follow an intermediate completion. | Boundary chime. |
+| Final manual Skip | Says the session finished. | Quiet. |
 
-The agreed design adds one policy module and one optional setting. There is no persisted cue queue or delivery history. Leaving the Dashboard clears transient playback state. Timer cards and the Dashboard’s accessible status region remain available if synthesis fails or the timer is muted.
-
-## Cue inventory
-
-| Event | Foreground response | Setting and usefulness |
-| --- | --- | --- |
-| Countdown Timer naturally reaches its deadline | “Tea complete.” | **Speak completion**. Lets someone finish another task while waiting. |
-| Interval preparation starts or resumes | “Yoga, starting in 3,” then “2,” then “1.” A missed number expires. | **Speak 3-second preparation**. Provides time to get into position, including after rest or if preparation is restarted. |
-| An interval enters a positive rest | “Yoga, rest.” Applies after natural completion or Skip if the resulting rest is running. | **Speak rest and repetition starts**. Signals when to stop the activity. Zero-length rest has no rest cue. |
-| A repetition starts | “Yoga, start repetition 2.” Applies to initial Start, the end of preparation or rest, a direct zero-rest handoff, Skip rest, and a running Restart that enters activity. | **Speak rest and repetition starts**. Signals when to move. Ordinary Resume continues the attempt quietly. A Restart while paused waits for Resume and uses the preparation flow when enabled. |
-| An interval reaches the final seconds of activity | Current number, with the timer name at the window opening and when a spoken number switches timers. | **Speak final-seconds countdown**. Helps pace the end of the repetition. For a five-second repetition and ten-second window, speech starts at four. |
-| A repetition ends naturally and another remains | “Yoga, repetition 1 complete.” | **Speak completion**. Confirms progress. A still-current rest or next-start instruction can follow if phase cues are enabled. |
-| The interval session ends on its final repetition | “Yoga complete.” | **Speak completion**. The session message takes precedence over a separate final-repetition message. |
-| The last slot is manually skipped | “Yoga, session finished.” | **Speak completion**. Confirms the terminal state without implying the skipped repetition was completed. |
-| A repetition ends naturally with final-seconds cues enabled | A chime instead of spoken zero, including on the final natural repetition. | **Speak final-seconds countdown**. Marks the exact activity boundary when audio is available. Simultaneous boundary chimes within a sample coalesce. |
+Off silences these events. The cue queue is transient. Leaving the Dashboard clears playback state. Cards and the accessible status region continue to provide feedback.
 
 ### Quiet and deferred events
 
@@ -45,7 +35,7 @@ The agreed design adds one policy module and one optional setting. There is no p
 4. [Playback controller](../src/foreground-cues.js) ranks due candidates and admits up to two timers. Session completion outranks repetition completion, then live phase cues, then numbers. A higher-priority cue can interrupt a lower-priority utterance. Each admitted timer can hold a pending summary and a pending live phase cue or number. Ties use due time, phase deadline, and card key. Expired numbers are dropped before playback. Boundary cues have up to two seconds to start, and live phase prompts expire sooner if the phase ends. Moving to another phase cancels its active instruction. An eight-second watchdog releases stalled speech.
 5. [Platform adapters](../src/foreground-platform.js) own playback and wake capabilities. Web uses Speech Synthesis and Screen Wake Lock. Android uses TextToSpeech and a keep-screen-on flag. iOS uses AVSpeechSynthesizer and the idle-timer override. Keep screen awake is evaluated independently for opted-in running sessions.
 
-A final-seconds chime is produced from a natural repetition boundary. The Dashboard’s general Timer sound setting still controls its ordinary status tones for other timers.
+A boundary chime comes from a natural completion. Board status tones still apply to eligible cards without an explicit timer sound mode.
 
 ## Developer and coding agent workflow
 
@@ -70,9 +60,6 @@ Use controlled timestamps and fake speech in [foreground cue tests](../src/foreg
 
 Run `node --test src/foreground-cues.test.js src/dashboard-sessions.test.js` for focused checks and `npm test` if shared timer or persistence behavior changes. Update the cue inventory and the [changelog entry](changelog/timer-phase-4/README.md) for user-visible changes to this feature.
 
-## Implementation and verification plan
+## Release verification
 
-1. **Implemented** — Expose exact natural transitions and extract cue policy. Verify short repetitions, simultaneous cues, checkpoint catch-up, and distinct completion and Skip wording.
-2. **Implemented** — Add default-off rest and repetition-start speech, with saved configuration and preset support. Verify real phase entry through Start, preparation, rest, Skip rest, Restart, and zero-rest transitions. Preserve mute and foreground invalidation.
-3. **Implemented** — Resolve board changes before sampling and use one final-seconds chime path. Cover stale prompts, completion priority, and silent return after a missed boundary.
-4. **Remaining release verification** — Listen on physical iOS and Android devices and in desktop/mobile Safari. Check first-gesture speech, short rests, long names, two timers, screen-reader announcements, focus/visibility changes, and screen-wake duration. Speech is best effort when a device starts playback late or the queue drops an expired cue.
+Use the [test plan](test-plan.md) for physical-device audio, wake, and accessibility checks. Speech is best effort when a device starts playback late or the queue drops an expired cue.
