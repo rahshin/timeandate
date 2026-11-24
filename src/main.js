@@ -1,6 +1,7 @@
+import { mountTimezonePicker, timezoneField } from "./timezone-picker.js";
 import "./style.css";
 import { dashboardPath, dashboardReady, historyPath, mountDashboard } from "./dashboard.js";
-import { cities, citiesByTimeZone, cityIds, clockFormatters, countdown, createDateTimer, fillTimeZones, validDateTimer } from "./time.js";
+import { cities, citiesByTimeZone, cityIds, clockFormatters, countdown, createDateTimer, validDateTimer } from "./time.js";
 import {
   durationDisplay,
   durationMilliseconds,
@@ -176,7 +177,7 @@ function renderDateTimer(panel) {
     <h2>Countdown Timer</h2>
     <form class="timer-form card" aria-label="Countdown Timer">
       <div class="field"><label for="target">Target date and time</label><input id="target" type="datetime-local" step="60" required></div>
-      <div class="field"><label for="timezone">Timezone</label><select id="timezone"></select></div>
+      ${timezoneField}
       <button type="submit">Start countdown</button>
       <button class="secondary" id="clear" type="button">Clear</button>
       <p id="error" role="alert" hidden></p>
@@ -191,12 +192,11 @@ function renderDateTimer(panel) {
     </section>
     <p id="timer-status" role="status"></p>`;
   const form = panel.querySelector("form");
-  const zone = form.querySelector("#timezone");
+  const zone = form.elements.timezone;
   const target = form.querySelector("#target");
   const error = form.querySelector("#error");
   const status = panel.querySelector("#timer-status");
-  const localZone = fillTimeZones(zone);
-  zone.value = timerDraft?.zone || localZone;
+  const picker = mountTimezonePicker(zone, timerDraft?.zone);
   target.value = timerDraft?.wallTime || "";
   form.onsubmit = (event) => {
     event.preventDefault();
@@ -214,7 +214,7 @@ function renderDateTimer(panel) {
     timerDraft = undefined;
     saveTimer(timerKey, timerDraft);
     target.value = "";
-    zone.value = localZone;
+    picker.setZone();
     error.hidden = true;
     redraw();
   };

@@ -16,6 +16,10 @@ test("target conversion accounts for DST and rejects ambiguous or nonexistent ti
     targetInstant("2026-11-18T15:30", "America/Los_Angeles"),
     "2026-11-18T23:30:00Z",
   );
+  assert.equal(
+    targetInstant("2026-07-18T15:30", "America/Los_Angeles"),
+    "2026-07-18T22:30:00Z",
+  );
   assert.throws(
     () => targetInstant("2026-11-01T01:30", "America/Los_Angeles"),
     RangeError,

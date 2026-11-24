@@ -5,12 +5,13 @@ import {
 import { playTick, playTone, unlockTone } from "./timeandate/audio.js";
 import {
   clockFormatters, createDateTimer, dateCountdownDisplay, dateCountdownShortcut, dateCountdownUsesAutomaticSeconds,
-  fillTimeZones, validDateTimer,
+  validDateTimer,
 } from "./time.js";
 import { createForegroundCues, createWakeController } from "./foreground-cues.js";
 import { hasForegroundCues } from "./foreground-cue-policy.js";
 import { foregroundPlatform } from "./foreground-platform.js";
-import { upcomingHolidays } from "./dashboard-holidays.js";
+import { mountTimezonePicker, timezoneField } from "./timezone-picker.js";
+import { upcomingDatePresets } from "./dashboard-date-presets.js";
 import { advanceSession } from "./timer-session.js";
 import {
   cardPrefix as prefix, checkpointSessions, commandSession, dataKey, offBoardRuns, openDashboardData, originalId,
@@ -22,24 +23,25 @@ const dateCountdown = {
   description: "Count down to a date and time in a selected timezone.",
   fields: `
     <details>
-      <summary>Holiday presets</summary>
-      <label class="field">Country <select name="holidayCountry">
+      <summary>Date presets</summary>
+      <p>Holidays and events use the timezone selected below.</p>
+      <label class="field">Country <select name="presetCountry">
         <option value="US">United States</option>
+        <option value="CA">Canada</option>
         <option value="IN">India</option>
       </select></label>
-      <label class="field">Holiday <select name="holidayPreset"></select></label>
+      <label class="field">Preset <select name="datePreset"></select></label>
     </details>
     <label class="field">Target date and time <input name="target" type="datetime-local" required></label>
     <div class="dashboard-actions">
       <button type="button" class="secondary" name="targetNow">Now</button>
       <button type="button" class="secondary" name="targetToday">Today</button>
     </div>
-    <label class="field">Timezone <select name="timezone"></select></label>`,
+    ${timezoneField}`,
   init(fields, value) {
-    fillTimeZones(fields.timezone);
+    mountTimezonePicker(fields.timezone, value?.zone);
     if (value) {
       fields.target.value = value.wallTime;
-      fields.timezone.value = value.zone;
     } else {
       fields.target.value = dateCountdownShortcut("today", "", fields.timezone.value);
       fields.target.dataset.autoFilled = "";
@@ -50,32 +52,35 @@ const dateCountdown = {
       if (shortcut === "now") fields.target.dataset.autoFilled = "";
     };
     fields.target.addEventListener("input", () => { delete fields.target.dataset.autoFilled; });
-    fields.timezone.addEventListener("change", () => {
-      if (fields.target.hasAttribute("data-auto-filled")) {
-        fields.target.value = dateCountdownShortcut("today", "", fields.timezone.value);
-      }
-    });
     const country = new Intl.Locale(navigator.language || "en").region;
-    if (country === "IN") fields.holidayCountry.value = country;
-    let holidays;
-    const refreshHolidays = () => {
-      holidays = upcomingHolidays(fields.holidayCountry.value, fields.timezone.value);
-      fields.holidayPreset.replaceChildren(new Option("Choose a holiday", ""));
-      for (const { id, name, value } of holidays) {
-        fields.holidayPreset.add(new Option(`${name} · ${value.wallTime.slice(0, 10)}`, id));
+    if (country === "CA" || country === "IN") fields.presetCountry.value = country;
+    let datePresets;
+    const refreshDatePresets = () => {
+      const selected = fields.datePreset.value;
+      datePresets = upcomingDatePresets(fields.presetCountry.value, fields.timezone.value);
+      fields.datePreset.replaceChildren(new Option("Choose a date preset", ""));
+      for (const { id, name, event, value } of datePresets) {
+        const dateLabel = event ? `${value.wallTime.replace("T", " ")} local` : value.wallTime.slice(0, 10);
+        fields.datePreset.add(new Option(`${name} · ${dateLabel}`, id));
+      }
+      if (datePresets.some(({ id, value }) => id === selected && value.wallTime === fields.target.value)) {
+        fields.datePreset.value = selected;
       }
     };
-    refreshHolidays();
-    fields.holidayCountry.onchange = refreshHolidays;
-    fields.timezone.addEventListener("change", refreshHolidays);
-    fields.target.addEventListener("input", () => { fields.holidayPreset.value = ""; });
-    fields.holidayPreset.onchange = () => {
-      const holiday = holidays.find(({ id }) => id === fields.holidayPreset.value);
-      if (!holiday) return;
-      fields.timerName.value = holiday.name;
-      fields.target.value = holiday.value.wallTime;
+    refreshDatePresets();
+    fields.presetCountry.onchange = refreshDatePresets;
+    fields.timezone.addEventListener("change", () => {
+      delete fields.target.dataset.autoFilled;
+      refreshDatePresets();
+    });
+    fields.target.addEventListener("input", () => { fields.datePreset.value = ""; });
+    fields.datePreset.onchange = () => {
+      const preset = datePresets.find(({ id }) => id === fields.datePreset.value);
+      if (!preset) return;
+      fields.timerName.value = preset.name;
+      fields.target.value = preset.value.wallTime;
       fields.target.dispatchEvent(new Event("input", { bubbles: true }));
-      fields.holidayPreset.value = holiday.id;
+      fields.datePreset.value = preset.id;
     };
     fields.targetNow.onclick = () => setTarget("now");
     fields.targetToday.onclick = () => setTarget("today");
@@ -107,11 +112,11 @@ const worldClock = {
   name: "World Clock",
   description: "Show the current time and date in a timezone.",
   fields: `
-    <label class="field">Timezone <select name="timezone" required></select></label>
+    ${timezoneField}
     <label class="dashboard-checkbox">
       <input type="checkbox" name="showSeconds"> Show seconds
     </label>`,
-  init: fields => fillTimeZones(fields.timezone),
+  init: (fields, value) => mountTimezonePicker(fields.timezone, value?.zone),
   create(fields) {
     const value = { zone: fields.timezone.value, showSeconds: fields.showSeconds.checked };
     if (!this.valid(value)) throw new Error("Choose a valid timezone.");

@@ -2,6 +2,8 @@
 
 Update this changelog in the same PR as any user-visible feature, fix, behavior change, or removal. Add the entry before merging so it is included in the release candidate. Describe the user impact and any platform limitations. For visual changes, link annotated screenshots. Routine internal changes can skip an entry.
 
+- [Search timezones and choose date presets](docs/changelog/timezone-picker/README.md)
+
 - [Timer progress and sound controls](docs/changelog/timer-progress-and-sound/README.md)
 
 - [Dashboard design phase 1 · Run safety and recovery](docs/changelog/design-phase-1/README.md)
