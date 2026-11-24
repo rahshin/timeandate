@@ -12,15 +12,15 @@ npm run build
 npx --no-install playwright install chromium
 npm run test:e2e
 npm run mobile:build
-TIMEANDATE_TEST_MODE=native npm run test:e2e -- --grep-invert '^.*standalone (countdowns|interval readout)'
+TIMEANDATE_TEST_MODE=native npm run test:e2e
 ```
 
 | Suite | Coverage |
 | --- | --- |
 | [Node](../package.json) | Calendar and timezone math (including DST gaps and overlaps), curated clock links, duration input, standalone intervals, session phase actions and statistics, local data migration and recovery, stale commands and History, template selection, cue scheduling and arbitration, release selection and smoke helpers. |
 | [Playwright Chromium](../e2e/dashboard.spec.mjs) | First-use and seasonal examples, options and keyboard focus, duplicate submit protection, countdown progress, timer sound modes and mute, peer-tab update focus, clock seconds and analog synchronization, date precision and shortcuts, interval completion and History, narrow readout fitting, and standalone timer readouts. |
-| [Actions CI](../.github/workflows/ci.yml) | Workflow lint, Node tests, web build and Chromium, native bundle compilation. Candidate creation reruns the source's Node and web browser suites. |
-| Native browser preview | Run Dashboard cases against `dist-native/`. The two standalone cases only apply to the web bundle. Both signed native workflows currently invoke the full suite in native mode, so the standalone cases can block their test gate. The filtered local command above verifies the applicable cases. Track correction of the workflow's suite selection before treating a signed build as verified. |
+| [Actions CI](../.github/workflows/ci.yml) | Workflow lint, Node tests, and Chromium against both built bundles. Candidate creation reruns the source's Node and web browser suites. |
+| Native browser preview | CI and both signing workflows run the applicable browser cases against `dist-native/`. Playwright excludes cases tagged `@web-only` in native mode. Physical-device verification remains part of native release sign-off. |
 
 ## Release scenarios
 

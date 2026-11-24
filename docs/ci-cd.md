@@ -4,13 +4,38 @@
 
 | Workflow | Trigger | Verification and output |
 | --- | --- | --- |
-| CI | PRs and pushes to `main` or `release/**` | Actions lint, Node tests, production web build, Chromium browser tests, native web bundle build. |
+| CI | PRs and pushes to `main` or `release/**` | Actions lint, Node tests, production web and native bundle builds, and Chromium browser tests against both bundles. |
 | Build mobile apps | PRs, pushes to `main` or `release/**`, manual dispatch | Node tests, Android debug APKs and unsigned iOS Release Simulator ZIPs. Automatic runs build both app IDs. A manual run selects one target. |
 | Release | Manual dispatch from `main` | Cut a candidate, promote a published RC, or restore a stable web bundle. Candidate creation requires successful push CI on the source SHA and runs its own web tests. |
 | Build Android sideload APK | Manual dispatch | Node tests and Chromium against the native bundle, then a signed Release APK with alignment, signature, and manifest checks. |
 | Build signed mobile apps | Manual dispatch | Node tests and Chromium against the native bundle, then signed AAB and IPA artifacts for manual distribution. Production signing requires a `main` or `release/*` branch. |
 
-See [mobile builds](mobile.md) for target IDs, signing environments, and installation. The [test plan](test-plan.md) records the native browser suite selection issue affecting signing.
+See the [test plan](test-plan.md) for release verification and [mobile builds](mobile.md) for target IDs, signing environments, and installation.
+
+## Pull request quality gates
+
+In the GitHub ruleset for `main` and active maintenance branches, require the CI workflow's `validate` check and an approving review. Require fresh approval after code changes. The PR template asks authors to link changed behavior to named tests or explain why existing coverage is sufficient.
+
+### Local AI review
+
+Run the [PR test review skill](../skills/pr-test-review/SKILL.md) through the [launcher](../scripts/pr-agent). Choose `codex`, `claude`, or `hermes`. Each uses its configured model provider. The review compares the current branch to the local `origin/main` by default.
+
+```sh
+./scripts/pr-agent review codex
+./scripts/pr-agent review claude 'Compare against origin/release/1.3.'
+./scripts/pr-agent review hermes 'Include staged and unstaged changes.'
+```
+
+### Draft a PR with test evidence
+
+After committing the change, use the [PR creator skill](../skills/pr-creator/SKILL.md) to assemble the title and body. Supply any local test outputs, manual results, or existing CI links you want it to include.
+
+```sh
+./scripts/pr-agent review codex > /tmp/timeandate-pr-review.md
+./scripts/pr-agent draft codex 'Use /tmp/timeandate-pr-review.md as advisory coverage evidence. Mark checks without results as pending.'
+```
+
+The draft lists the test and observed result for each changed behavior. Include the tested commit or artifact and the device or browser for manual checks. GitHub attaches automated checks to the PR separately. Review the generated body before pasting it into GitHub, or explicitly ask an agent with GitHub access to publish it as a draft PR.
 
 ## Feature and maintenance sources
 

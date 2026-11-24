@@ -404,7 +404,7 @@ test("date presets include timed events in the selected timezone", async ({ page
   await expect(tile(page, "U.S. General Election Day")).toContainText("2028-11-07 20:00 · America/New York");
 });
 
-test("standalone countdowns highlight the smallest changing unit", async ({ page }) => {
+test("standalone countdowns highlight the smallest changing unit", { tag: "@web-only" }, async ({ page }) => {
   await page.clock.setFixedTime(new Date("2027-01-01T12:00:00Z"));
   await page.goto("/countdown");
   await pickTimezone(page, "UTC");
@@ -420,7 +420,7 @@ test("standalone countdowns highlight the smallest changing unit", async ({ page
   await expect(seconds).toHaveText("59");
 });
 
-test("standalone interval readout highlights seconds on a minute rollover", async ({ page }) => {
+test("standalone interval readout highlights seconds on a minute rollover", { tag: "@web-only" }, async ({ page }) => {
   await page.clock.setFixedTime(new Date("2027-01-01T12:00:00Z"));
   await page.goto("/interval-timer-app/");
   await page.getByRole("button", { name: "Start", exact: true }).click();
