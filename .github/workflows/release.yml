@@ -18,6 +18,10 @@ on:
         description: Candidate only. Select the next major release line. Leave tag blank.
         type: boolean
         default: false
+      refresh_catalogs:
+        description: Candidate from main only. Check for catalog updates before building.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -27,8 +31,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  refresh-catalogs:
+    if: github.ref == 'refs/heads/main' && inputs.operation == 'candidate' && inputs.refresh_catalogs && inputs.source_sha == ''
+    uses: ./.github/workflows/refresh-date-and-timezone-catalogs.yml
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      refresh_cities: true
+      refresh_dates: true
+
   plan:
-    if: github.ref == 'refs/heads/main'
+    needs: refresh-catalogs
+    if: >-
+      ${{ !cancelled() && github.ref == 'refs/heads/main' &&
+          (needs.refresh-catalogs.result == 'skipped' ||
+           (needs.refresh-catalogs.result == 'success' && needs.refresh-catalogs.outputs.changed == 'false')) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -53,6 +71,7 @@ jobs:
           REQUESTED_TAG: ${{ inputs.tag }}
           REQUESTED_SOURCE: ${{ inputs.source_sha }}
           MAJOR_RELEASE: ${{ inputs.major_release }}
+          REFRESH_CATALOGS: ${{ inputs.refresh_catalogs }}
           DISPATCH_REF: ${{ github.ref }}
           DISPATCH_SHA: ${{ github.sha }}
         run: |
@@ -76,6 +95,11 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           }
           trap show_selection EXIT
+
+          if [ "$REFRESH_CATALOGS" = true ] && { [ "$OPERATION" != candidate ] || [ -n "$REQUESTED_SOURCE" ]; }; then
+            echo "Refresh catalogs applies only to candidates from main with source_sha left blank. Use the catalog refresh workflow for a maintenance branch." >&2
+            exit 1
+          fi
 
           if [ "$OPERATION" = candidate ]; then
             SOURCE=${REQUESTED_SOURCE:-$DISPATCH_SHA}
