@@ -17,8 +17,8 @@ const areas = new Set([...Object.keys(include), ...Object.keys(events)]);
 const catalog = Object.fromEntries([...areas].map(area => {
   const presets = (include[area] ?? []).map(id => {
     if (!Object.hasOwn(holidays, id)) throw new Error(`Unknown preset ${id} in ${area}`);
-    const { name, dates, month, day, weekday, occurrence } = holidays[id];
-    if (dates) return { id, name, dates: reviewedDates(id, dates) };
+    const { name, dates, month, day, weekday, occurrence, presetOnly = false } = holidays[id];
+    if (dates) return { id, name, dates: reviewedDates(id, dates), ...(presetOnly ? { presetOnly } : {}) };
     Temporal.PlainDate.from({ year: 2028, month, day: day ?? 1 }, { overflow: "reject" });
     if (day !== undefined) return { id, name, month, day };
     if (![1, 2, 3, 4, 5, 6, 7].includes(weekday) || ![1, 2, 3, 4].includes(occurrence)) {

@@ -97,6 +97,38 @@
   display: inline-block;
 }
 
+.dashboard-world-clock {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.65rem;
+}
+
+.dashboard-world-clock .dashboard-clock {
+  margin: 0;
+}
+
+.dashboard-clock-face {
+  width: 100%;
+  color: var(--accent);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+}
+
+.dashboard-clock-face > :nth-child(-n+2) {
+  stroke: var(--muted);
+}
+
+.dashboard-clock-face [data-hand="second"] {
+  stroke: #fbbf24;
+}
+
+.dashboard-clock-hand-hidden {
+  display: none;
+}
+
 .dashboard-actions {
   display: flex;
   flex-wrap: wrap;

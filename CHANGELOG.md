@@ -4,6 +4,8 @@ Update this changelog in the same PR as any user-visible feature, fix, behavior 
 
 - [Search timezones and choose date presets](docs/changelog/timezone-picker/README.md)
 
+- [Analog clocks and timer highlights](docs/changelog/clock-timer-readouts/README.md)
+
 - [Timer progress and sound controls](docs/changelog/timer-progress-and-sound/README.md)
 
 - [Dashboard design phase 1 · Run safety and recovery](docs/changelog/design-phase-1/README.md)

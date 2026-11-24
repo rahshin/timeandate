@@ -1,3 +1,4 @@
+import { createDigitalReadout } from "./timer-readout.js";
 import "./dashboard.css";
 import {
   dashboardCountdown, dashboardSessionInterval, timerSoundChoices, timerSoundMode,
@@ -793,7 +794,17 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         </div>
       </div>
       ${isClock
-        ? '<time class="dashboard-clock"><span></span></time>'
+        ? `<div class="dashboard-world-clock">
+            <svg class="dashboard-clock-face" viewBox="0 0 64 64" aria-hidden="true">
+              <circle cx="32" cy="32" r="30" />
+              <path d="M32 6v4 M58 32h-4 M32 58v-4 M6 32h4" />
+              <path data-hand="hour" d="M32 32V19" stroke-width="3" />
+              <path data-hand="minute" d="M32 32V12" stroke-width="2" />
+              <path data-hand="second" d="M32 36V8" />
+              <circle cx="32" cy="32" r="1.5" fill="currentColor" />
+            </svg>
+            <time class="dashboard-clock"><span></span></time>
+          </div>`
         : '<p class="dashboard-clock" role="timer" aria-label="Time remaining"><span></span></p>'}
       <p class="dashboard-status"></p>
       ${hasSeconds ? `<label class="dashboard-clock-seconds"><input type="checkbox"
@@ -804,15 +815,18 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
     const detail = card.querySelector(".dashboard-detail");
     const clock = card.querySelector(".dashboard-clock");
     const readout = clock.firstElementChild;
+    const paintReadout = createDigitalReadout(readout);
+    const clockHands = card.querySelectorAll("[data-hand]");
     let readoutShape;
     readouts.observe(clock);
-    function updateReadout(display) {
-      if (readout.textContent === display) return;
-      readout.textContent = display;
+    function updateReadout(display, smallestUnit) {
+      if (!paintReadout(display, smallestUnit)) return false;
       const shape = display.replace(/[0-9]/g, "0");
-      if (shape === readoutShape) return;
-      readoutShape = shape;
-      fitReadout(clock);
+      if (shape !== readoutShape) {
+        readoutShape = shape;
+        fitReadout(clock);
+      }
+      return true;
     }
     const status = card.querySelector(".dashboard-status");
     const border = card.querySelector(".dashboard-countdown-border");
@@ -961,13 +975,19 @@ export function mountDashboard(root, { path, requestedBoard, requestedTimer, int
         if (secondsLabel.hidden !== hidden) secondsLabel.hidden = hidden;
       }
       if (isClock) {
-        if (!formats || checked !== formatsShowSeconds) {
+        const modeChanged = !formats || checked !== formatsShowSeconds;
+        if (modeChanged) {
           formats = clockFormatters(record.value.zone, checked);
           formatsShowSeconds = checked;
+          clockHands[2].classList.toggle("dashboard-clock-hand-hidden", !checked);
         }
         const display = formats.time.format(now);
         const date = formats.date.format(now);
-        updateReadout(display);
+        if (updateReadout(display, checked ? "s" : "m")) {
+          const [hour, minute, second = 0] = display.split(":").map(Number);
+          const angles = [hour * 30 + minute / 2, minute * 6, second * 6];
+          clockHands.forEach((hand, index) => hand.setAttribute("transform", `rotate(${angles[index]} 32 32)`));
+        }
         clock.dateTime = new Date(now).toISOString();
         if (status.textContent !== date) status.textContent = date;
         return;

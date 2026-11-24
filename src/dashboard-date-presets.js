@@ -12,7 +12,7 @@ function annualDate(year, { month, day = 1, weekday, occurrence }) {
 export function upcomingDatePresets(country, zone, now = Date.now()) {
   const year = Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(zone).year;
   const presets = [...catalog.common, ...(country !== "common" && Object.hasOwn(catalog, country) ? catalog[country] : [])];
-  return presets.flatMap(({ id, name, dates, event = false, localTime = "00:00", ...rule }) => {
+  return presets.flatMap(({ id, name, dates, event = false, presetOnly = false, localTime = "00:00", ...rule }) => {
     dates ??= [year - 1, year, year + 1].map(year => annualDate(year, rule));
     for (const day of dates) {
       const wallTime = `${day}T${localTime}`;
@@ -23,7 +23,7 @@ export function upcomingDatePresets(country, zone, now = Date.now()) {
         // Some local times are skipped or repeated during clock changes.
         continue;
       }
-      if (Date.parse(instant) > now) return [{ id, name, event, value: { wallTime, zone, instant } }];
+      if (Date.parse(instant) > now) return [{ id, name, event, presetOnly, value: { wallTime, zone, instant } }];
     }
     return [];
   }).sort((a, b) => Date.parse(a.value.instant) - Date.parse(b.value.instant));
@@ -33,5 +33,5 @@ export function seasonalHoliday(country, zone, now) {
   const deadline = Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(zone)
     .add({ days: 30 }).epochMilliseconds;
   return upcomingDatePresets(country, zone, now)
-    .find(holiday => !holiday.event && Date.parse(holiday.value.instant) <= deadline);
+    .find(holiday => !holiday.event && !holiday.presetOnly && Date.parse(holiday.value.instant) <= deadline);
 }

@@ -1,4 +1,5 @@
 import { mountTimezonePicker, timezoneField } from "./timezone-picker.js";
+import { createDigitalReadout, createUnitHighlight } from "./timer-readout.js";
 import "./style.css";
 import { dashboardPath, dashboardReady, historyPath, mountDashboard } from "./dashboard.js";
 import { cities, citiesByTimeZone, cityIds, clockFormatters, countdown, createDateTimer, validDateTimer } from "./time.js";
@@ -198,6 +199,8 @@ function renderDateTimer(panel) {
   const status = panel.querySelector("#timer-status");
   const picker = mountTimezonePicker(zone, timerDraft?.zone);
   target.value = timerDraft?.wallTime || "";
+  const digits = Object.keys(units).map(unit => [unit, panel.querySelector(`[data-unit="${unit}"]`)]);
+  const highlight = createUnitHighlight();
   form.onsubmit = (event) => {
     event.preventDefault();
     try {
@@ -220,9 +223,11 @@ function renderDateTimer(panel) {
   };
   return () => {
     const parts = timerDraft && countdown(timerDraft.instant, timerDraft.zone);
-    for (const unit of Object.keys(units))
-      panel.querySelector(`[data-unit="${unit}"]`).textContent =
-        parts?.[unit] ?? (timerDraft ? "0" : "—");
+    highlight(digits.map(([unit, element]) => {
+      const value = String(parts?.[unit] ?? (timerDraft ? "0" : "—"));
+      if (element.textContent !== value) element.textContent = value;
+      return [unit, value, element];
+    }));
     const title =
       parts &&
       Object.entries(parts)
@@ -260,7 +265,7 @@ function renderDurationTimer(panel) {
   const toggle = panel.querySelector("#duration-toggle");
   const reset = panel.querySelector("#duration-reset");
   const error = panel.querySelector("#duration-error");
-  const clock = panel.querySelector(".duration-clock");
+  const paintReadout = createDigitalReadout(panel.querySelector(".duration-clock"));
   const status = panel.querySelector("#duration-status");
 
   if (durationTimer) {
@@ -295,7 +300,7 @@ function renderDurationTimer(panel) {
     const remaining = durationRemaining(durationTimer);
     const display = durationDisplay(remaining);
     const paused = durationTimer?.endAt === null;
-    if (clock.textContent !== display) clock.textContent = display;
+    paintReadout(display);
     toggle.disabled = remaining === 0;
     toggle.textContent = paused ? "Resume" : "Pause";
     reset.disabled = !durationTimer;

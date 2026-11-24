@@ -8,6 +8,10 @@
   --muted: #aab8cf;
   --accent: #8de8d1;
 }
+.timer-unit-changed,
+.measure .timer-unit-changed {
+  color: #fbbf24;
+}
 * {
   box-sizing: border-box;
 }

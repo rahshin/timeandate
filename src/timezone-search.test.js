@@ -55,7 +55,9 @@ test("holiday presets include selected dates for each country", () => {
   assert.equal(canada.find(holiday => holiday.id === "canada-day").value.wallTime, "2027-07-01T00:00");
   assert.equal(canada.find(holiday => holiday.name === "Thanksgiving").value.wallTime, "2027-10-11T00:00");
   assert.equal(us.find(holiday => holiday.name === "Thanksgiving").value.wallTime, "2027-11-25T00:00");
-  assert.deepEqual(india.filter(holiday => holiday.name.startsWith("Holi")).map(holiday => holiday.id), ["holi"]);
+  assert.deepEqual(india.filter(holiday => holiday.name.startsWith("Holi")).map(holiday => holiday.id), ["holi-goa", "holi"]);
+  assert.equal(india.find(holiday => holiday.id === "holi-goa").value.wallTime, "2027-03-22T00:00");
+  assert.equal(seasonalHoliday("IN", "Asia/Kolkata", Date.parse("2027-03-20T00:00Z")).id, "holi");
 });
 
 test("handpicked events join holidays and keep their preset local time", () => {

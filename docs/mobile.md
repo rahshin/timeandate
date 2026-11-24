@@ -62,7 +62,7 @@ For Timers Dev, substitute the paths from the table and launch `io.github.rahshi
 
 ## Build a privately signed APK for Android testers
 
-Use **Actions → Build Android sideload APK → Run workflow** on a trusted branch. This workflow runs the tests, builds the Android Release variant, and verifies the APK's alignment, signature, and non-debuggable manifest before uploading it.
+Use **Actions → Build Android sideload APK → Run workflow** on a trusted branch. This workflow runs Node and native browser tests, then builds the Android Release variant, and verifies the APK's alignment, signature, and non-debuggable manifest before uploading it.
 
 1. Create a dedicated sideload signing key if you do not already have one. Run the command below on your computer and choose a password when prompted. Store a backed-up copy of the keystore securely so testers can install updates.
 
@@ -88,7 +88,7 @@ Add your Apple account in Xcode, connect your iPhone, then run `npm run mobile:s
 
 ## Build signed apps for store QA and production
 
-Build from the intended release commit, run `npm ci` and `npm test`, then sync the tracked Capacitor projects. Use [Build signed mobile apps](../.github/workflows/mobile-release.yml) for CI signing, or follow the platform instructions below to sign locally. Store upload and release are manual. The Cloudflare release workflow deploys the website and PWA.
+Build from the intended release commit, run `npm ci` and `npm test`, then sync the tracked Capacitor projects. Use [Build signed mobile apps](../.github/workflows/mobile-release.yml) for CI signing, or follow the platform instructions below to sign locally. Use the [test plan](test-plan.md) to verify playback, screen wake, recovery, and upgrades on physical devices. Store upload and release are manual. The Cloudflare release workflow deploys the website and PWA.
 
 ### Android · Google Play
 

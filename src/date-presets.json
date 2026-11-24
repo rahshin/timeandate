@@ -8,7 +8,7 @@
     },
     {
       "id": "new-year",
-      "name": "New Year’s Eve",
+      "name": "New Year’s Day",
       "month": 1,
       "day": 1
     }
@@ -55,6 +55,14 @@
         "2026-03-04",
         "2027-03-23"
       ]
+    },
+    {
+      "id": "holi-goa",
+      "name": "Holi (Dhulivandana, Goa)",
+      "dates": [
+        "2027-03-22"
+      ],
+      "presetOnly": true
     },
     {
       "id": "dussehra",
