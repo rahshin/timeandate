@@ -186,7 +186,8 @@ jobs:
           if-no-files-found: error
 
   build:
-    if: inputs.operation == 'candidate'
+    # An optional catalog refresh can be skipped even when the plan succeeds.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && inputs.operation == 'candidate' }}
     needs: plan
     runs-on: ubuntu-24.04
     steps:
@@ -225,7 +226,7 @@ jobs:
           if-no-files-found: error
 
   android:
-    if: inputs.operation != 'rollback'
+    if: ${{ !cancelled() && needs.plan.result == 'success' && inputs.operation != 'rollback' }}
     needs: plan
     runs-on: ubuntu-24.04
     steps:
@@ -281,7 +282,7 @@ jobs:
           if-no-files-found: error
 
   qa:
-    if: inputs.operation == 'candidate'
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.build.result == 'success' && inputs.operation == 'candidate' }}
     needs: [plan, build]
     runs-on: ubuntu-24.04
     environment:
@@ -323,7 +324,9 @@ jobs:
           node scripts/release.mjs smoke "$DEPLOY_URL"
 
   publish-candidate:
-    if: inputs.operation == 'candidate'
+    if: >-
+      ${{ !cancelled() && inputs.operation == 'candidate' && needs.plan.result == 'success' &&
+          needs.qa.result == 'success' && needs.android.result == 'success' }}
     needs: [plan, qa, android]
     runs-on: ubuntu-24.04
     permissions:
@@ -398,7 +401,9 @@ jobs:
           node scripts/release.mjs smoke "$DEPLOY_URL"
 
   publish-stable:
-    if: inputs.operation == 'promote'
+    if: >-
+      ${{ !cancelled() && inputs.operation == 'promote' && needs.plan.result == 'success' &&
+          needs.production.result == 'success' && needs.android.result == 'success' }}
     needs: [plan, production, android]
     runs-on: ubuntu-24.04
     permissions:
